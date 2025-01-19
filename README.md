@@ -7,7 +7,8 @@
 <!-- TABLE OF CONTENTS -->
 <h1> Table of Contents </h1>
 
-- [About The Project](#about-the-project)
+- Tobias Rinnert project
+[About The Project](#about-the-project)
 - [Getting Started](#getting-started)
   - [Installation](#installation)
 - [Usage](#usage)
@@ -19,6 +20,10 @@
 - [Contributing](#contributing)
 - [Contact](#contact)
 
+
+<!-- Tobias Rinnert project -->
+# Tobias Rinnert project
+This is a fork of lbf_foraging in which I want to implement my own RL algorithm to play around with ideas about RL and social simulations. 
 
 > [!CAUTION]
 > The LBF environment was updated to support the new [Gymnasium](https://gymnasium.farama.org/) interface in replacement of the deprecated `gym=0.21` dependency (many thanks @LukasSchaefer). For backwards compatibility, please see [Gymnasium compatibility documentation](https://gymnasium.farama.org/content/gym_compatibility/) or use version v1.1.1 of the repository. The main changes to the interface are as follows:
@@ -138,13 +143,12 @@ If you prefer code:
 
 ```python
 for a in adj_players: # the players that participated in loading the food
-    a.reward = float(a.level * food) # higher-leveled agents contribute more and are rewarded more. 
+    a.reward = float(a.level * food_level) # higher-leveled agents contribute more and are rewarded more. 
     if self._normalize_reward:
         a.reward = a.reward / float(
             adj_player_level * self._food_spawned
         )  # normalize reward so that the final sum of rewards is one.
 ```
-
 
 <!-- HUMAN PLAY SCRIPT -->
 # Human Play

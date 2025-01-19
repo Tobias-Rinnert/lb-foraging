@@ -670,7 +670,7 @@ class ForagingEnv(gym.Env):
             # find adjacent food
             player = loading_players.pop()
             frow, fcol = self.adjacent_food_location(*player.position)
-            food = self.field[frow, fcol]
+            food_level = self.field[frow, fcol]
 
             adj_players = self.adjacent_players(frow, fcol)
             adj_players = [
@@ -680,7 +680,7 @@ class ForagingEnv(gym.Env):
             adj_player_level = sum([a.level for a in adj_players])
             loading_players = loading_players - set(adj_players)
 
-            if adj_player_level < food:
+            if adj_player_level < food_level:
                 # failed to load
                 for a in adj_players:
                     a.reward -= self.penalty
@@ -688,7 +688,7 @@ class ForagingEnv(gym.Env):
 
             # else the food was loaded and each player scores points
             for a in adj_players:
-                a.reward = float(a.level * food)
+                a.reward = float(a.level * food_level)
                 if self._normalize_reward:
                     a.reward = a.reward / float(
                         adj_player_level * self._food_spawned

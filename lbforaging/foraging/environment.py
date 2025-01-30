@@ -94,6 +94,7 @@ class ForagingEnv(gym.Env):
         observe_agent_levels=True,
         penalty=0.0,
         render_mode=None,
+        full_info_mode=True
     ):
         self.logger = logging.getLogger(__name__)
         self.render_mode = render_mode
@@ -102,6 +103,7 @@ class ForagingEnv(gym.Env):
         self.field = np.zeros(field_size, np.int32)
 
         self.penalty = penalty
+        self.full_info_mode = full_info_mode
 
         if isinstance(min_food_level, Iterable):
             assert (
@@ -566,6 +568,21 @@ class ForagingEnv(gym.Env):
                 agent_y,
                 agent_y + 2 * self.sight + 1,
             )
+        
+        ### ADD ON from Tobias Rinnert to get all obs info as obs ###    
+        if self.full_info_mode:
+            # create a copy of the field and get the player information. 
+            field = self.field.copy() # gives the grid. food is on the grid with level e.g. 2
+            player_informations = []
+            for player in self.players:
+                position = player.position
+                level = player.level
+                player_informations.append({"position": position, "level": level})
+            obs = {"field": field, "player_infos": player_informations}
+            # the env needs a tuple with length == number of players. 
+            # Could change this but it seems simplier to alter as less code in the original repo as possible
+            add_on = [None] * (len(self.players) - 1)
+            return tuple([obs, *add_on])
 
         observations = [self._make_obs(player) for player in self.players]
         if self._grid_observation:

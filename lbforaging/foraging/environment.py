@@ -27,7 +27,7 @@ class CellEntity(Enum):
 
 
 class Player:
-    def __init__(self):
+    def __init__(self, id):
         self.controller = None
         self.position = None
         self.level = None
@@ -36,6 +36,7 @@ class Player:
         self.reward = 0
         self.history = None
         self.current_step = None
+        self.id = id
 
     def setup(self, position, level, field_size):
         self.history = []
@@ -98,7 +99,7 @@ class ForagingEnv(gym.Env):
     ):
         self.logger = logging.getLogger(__name__)
         self.render_mode = render_mode
-        self.players = [Player() for _ in range(players)]
+        self.players = [Player(id) for id in range(players)] ### Altered by Tobias Rinnert to introduce a fixed player id for referencing
 
         self.field = np.zeros(field_size, np.int32)
 
@@ -253,8 +254,8 @@ class ForagingEnv(gym.Env):
     @classmethod
     def from_obs(cls, obs):
         players = []
-        for p in obs.players:
-            player = Player()
+        for id, p in enumerate(obs.players):
+            player = Player(id) ### Altered by Tobias Rinnert to introduce a fixed player id for referencing
             player.setup(p.position, p.level, obs.field.shape)
             player.score = p.score if p.score else 0
             players.append(player)
@@ -575,7 +576,7 @@ class ForagingEnv(gym.Env):
             field = self.field.copy() # gives the grid. food is on the grid with level e.g. 2
             player_informations = []
             for player in self.players:
-                player_informations.append({"position": player.position, "level": player.level})
+                player_informations.append({"id": player.id, "position": player.position, "level": player.level})
             obs = {"field": field, "player_infos": player_informations}
             # the env needs a tuple with length == number of players. 
             # Could change this but it seems simplier to alter as less code in the original repo as possible

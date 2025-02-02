@@ -575,9 +575,7 @@ class ForagingEnv(gym.Env):
             field = self.field.copy() # gives the grid. food is on the grid with level e.g. 2
             player_informations = []
             for player in self.players:
-                position = player.position
-                level = player.level
-                player_informations.append({"position": position, "level": level})
+                player_informations.append({"position": player.position, "level": player.level})
             obs = {"field": field, "player_infos": player_informations}
             # the env needs a tuple with length == number of players. 
             # Could change this but it seems simplier to alter as less code in the original repo as possible

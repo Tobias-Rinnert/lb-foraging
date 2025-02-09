@@ -656,30 +656,40 @@ class ForagingEnv(gym.Env):
         loading_players = set()
 
         # move players
-        # if two or more players try to move to the same location they all fail
+        # if two or more players try to move to the same location one of them succeeds while the otheres fail. Altered by Tobias Rinnert
         collisions = defaultdict(list)
 
         # so check for collisions
         for player, action in zip(self.players, actions):
             if action == Action.NONE:
-                collisions[player.position].append(player)
+                collisions[player.position].append((player, action))
             elif action == Action.NORTH:
-                collisions[(player.position[0] - 1, player.position[1])].append(player)
+                collisions[(player.position[0] - 1, player.position[1])].append((player, action))
             elif action == Action.SOUTH:
-                collisions[(player.position[0] + 1, player.position[1])].append(player)
+                collisions[(player.position[0] + 1, player.position[1])].append((player, action))
             elif action == Action.WEST:
-                collisions[(player.position[0], player.position[1] - 1)].append(player)
+                collisions[(player.position[0], player.position[1] - 1)].append((player, action))
             elif action == Action.EAST:
-                collisions[(player.position[0], player.position[1] + 1)].append(player)
+                collisions[(player.position[0], player.position[1] + 1)].append((player, action))
             elif action == Action.LOAD:
-                collisions[player.position].append(player)
+                collisions[player.position].append((player, action))
                 loading_players.add(player)
 
-        # and do movements for non colliding players
-        for k, v in collisions.items():
-            if len(v) > 1:  # make sure no more than an player will arrive at location
-                continue
-            v[0].position = k
+        # and do movements for players
+        for field, players_actions in collisions.items():
+            if len(players_actions) > 1:  
+                # if more than one player tries to move to the same location or is on the same location
+                actions_on_field = [action for player, action in players_actions]
+                if Action.LOAD in actions_on_field or Action.NONE in actions_on_field:
+                    # if one of the players tries to load or is not moving, the others fail becaus teh field is blocked
+                    continue
+                else:
+                    # if all player try to move to the field, a random one succeeds
+                    player, action = self.np_random.choice(players_actions)
+                    player.position = field
+            else:
+                player, action = players_actions[0]
+                player.position = field
 
         # finally process the loadings:
         while loading_players:

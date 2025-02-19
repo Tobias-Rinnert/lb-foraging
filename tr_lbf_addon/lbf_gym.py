@@ -143,7 +143,7 @@ class Lbf_Gym(Agent, Fruit):
             path_finding_grid[*fruit.position] = 0
             
         if self.agents is not None:
-            # get all fields aropund teh agent
+            # get all fields around the agent
             fields_around_agent = np.array([agent.position + np.array([0, 1]),
                                 agent.position + np.array([0, -1]),
                                 agent.position + np.array([1, 0]),
@@ -156,6 +156,22 @@ class Lbf_Gym(Agent, Fruit):
                     path_finding_grid[*agent.position] = 0
         
         return path_finding_grid
+    
+    
+    def agents_choose_actions(self) -> list[str]:
+        """
+        Choose the next action for each agent. 
+        A simple wrapper around create_path_finding_grid and choose_next_action
+        """
+        actions = []
+        for agent in self.agents:
+            # update the path finding grid
+            new_path_finding_grid = self.create_path_finding_grid(agent)
+            # choose the next action
+            action = agent.choose_next_action(new_path_finding_grid)
+            actions.append(action)
+        return actions
+    
             
             
             

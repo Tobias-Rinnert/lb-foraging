@@ -153,19 +153,19 @@ class Agent():
         # define the grid
         grid = Grid(matrix=path_finding_grid)
         # find the path to the target
-        path, runs = self.pathfinding_alg.find_path(grid.node(*self.position), grid.node(*self.path_goal), grid)
+        # numpy goes row, column, pathfinding goes column, row. Just... why? What kind of madness is this?
+        path, runs = self.pathfinding_alg.find_path(grid.node(self.position[1], self.position[0]), 
+                                                    grid.node(self.path_goal[1], self.path_goal[0]), 
+                                                    grid)
         # define the current path of the agent as a list of arrays
-        self.current_path = np.array([[node.x,node.y] for node in path])
+        self.current_path = np.array([[node.y, node.x] for node in path])
+        if len(path) == 0:
+            print("No path found")
     
     
     def choose_next_action(self, new_path_finding_grid: np.array) -> np.int64:
         """
-        After a target fruit is chosen, choose the next action of the player 
-        given the player position and the positional difference to the fruit.
-        When a fruit is in the way the player will go around it. 
-        Other players are ignored. Possible collisions between players is handled by the enviroment.
-        This algorithm only works for the simple scenario of no larger objects in the way of teh agent. 
-        In case of larger objects spanning multiple cells use A* or other pathfinding algorithms.
+        TODO: update the description
         
         Args:
             path_finding_grid (np.array):  array where each obstacle is 0 or negative. Agents around the agent which are loading are also obstacles
@@ -179,11 +179,6 @@ class Agent():
         if self.path_finding_grid is None:
             self.path_finding_grid = new_path_finding_grid
         
-        # if the current position is the current_path_goal, the player is going to loading
-        if np.all(self.position == self.path_goal):
-            next_action = "load"
-            return self.action_string_to_int(next_action)
-        
         # get the current free slots around the target
         free_slots = self.target.free_slots
         # check which of the free slots is closest to the current position
@@ -191,7 +186,7 @@ class Agent():
         
         #TODO check if new fruits in the path have been spawned. If so update the path. 
         # if any fruit next to the current path is gone update the path
-        path_relevant_changes =  np.any(new_path_finding_grid != self.path_finding_grid)
+        path_relevant_changes =  np.any(new_path_finding_grid != self.path_finding_grid) # has the path_finding_grid changed?
         
         # check if the current path goal has changed. Checks implicetly if the current target has changed 
         # but takes into accoutn that fruits can be right next to each other
@@ -201,6 +196,11 @@ class Agent():
         if goal_has_changed or path_relevant_changes:
             self.path_goal = closest_free_slot
             self.update_current_path(new_path_finding_grid)
+            
+        # if the current position is the current_path_goal, the player is going to loading
+        if np.all(self.position == self.path_goal):
+            next_action = "load"
+            return self.action_string_to_int(next_action)
             
         # get the next position in the path given the current position
         next_position = self.current_path[np.where(np.all(self.current_path == self.position, axis=1))[0][0] + 1]

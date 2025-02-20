@@ -24,10 +24,17 @@ class Lbf_Gym(Agent, Fruit):
         # get the posiitions and level of the fruit
         self.get_fruit_infos()
         # get the player infos
-        self.get_agent_infos(observation["player_infos"])
+        self.initialize_agents(observation["player_infos"])
         
     
     def update_observation(self, observation: dict):
+        """
+        Update the observation with the new observation from the environment.
+
+        Args:
+            observation (dict): new observation from the environment
+        """
+        
         # get the full info field
         self.get_full_info_field(observation)
         # get the posiitions and level of the fruit
@@ -81,7 +88,7 @@ class Lbf_Gym(Agent, Fruit):
         self.fruits =  fruits
     
     
-    def get_agent_infos(self, agent_infos: dict) -> list[Agent]:
+    def initialize_agents(self, agent_infos: dict) -> list[Agent]:
         """Initialize the position and level of the player and add the current target
 
         Args:
@@ -96,8 +103,6 @@ class Lbf_Gym(Agent, Fruit):
             agent = Agent(id=agent["id"],
                           position=np.array(agent["position"]), 
                           level=agent["level"])
-            # choose a start fruit
-            agent.choose_fruit(self.fruits)
             # create the path finding grid
             agent.path_finding_grid = self.create_path_finding_grid(agent)
             agents.append(agent)
@@ -115,14 +120,18 @@ class Lbf_Gym(Agent, Fruit):
             # get the agent with the id of the new player info          
             id = new_player_info["id"]
             agent = [agent for agent in self.agents if agent.id == id][0]
+            # pass the new path_finding_grid to the agent
+            agent.path_finding_grid = self.create_path_finding_grid(agent)
+            # pass information about the fruits and agents to the agent
+            # TODO if information asymmetries are allowed, this should be changed here
+            agent.known_fruits = self.fruits
+            agent.process_agent_infos(self.agents)
             # update the position and write it into the position history
             new_position = np.array(new_player_info["position"])
             agent.position = new_position
             agent.position_history.append(new_position)
             # update the level
             agent.level = new_player_info["level"]
-            # update the target fruit
-            agent.choose_fruit(self.fruits)
 
             
             
@@ -142,7 +151,7 @@ class Lbf_Gym(Agent, Fruit):
         for fruit in self.fruits:
             path_finding_grid[*fruit.position] = 0
             
-        if self.agents is not None:
+        if self.agents is not None: #TODO check if this is necessary. Should be something ith initialization 
             # get all fields around the agent
             fields_around_agent = np.array([agent.position + np.array([0, 1]),
                                 agent.position + np.array([0, -1]),
@@ -165,10 +174,14 @@ class Lbf_Gym(Agent, Fruit):
         """
         actions = []
         for agent in self.agents:
-            # update the path finding grid
-            new_path_finding_grid = self.create_path_finding_grid(agent)
+            
+            # update the target fruit
+            agent.choose_fruit()
             # choose the next action
-            action = agent.choose_next_action(new_path_finding_grid)
+            action = agent.choose_next_action()
+            # update the last agent action
+            agent.last_action = action
+            
             actions.append(action)
         return actions
     

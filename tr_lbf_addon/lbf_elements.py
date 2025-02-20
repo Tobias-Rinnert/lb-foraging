@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+import itertools
 import random
 from dataclasses import dataclass
 from pathfinding.core.diagonal_movement import DiagonalMovement
@@ -147,36 +149,55 @@ class Agent():
 
     """Target selection"""
     
-    def choose_fruit(self): 
-            pos = self.position
-            level = self.level
+    def choose_fruit(self):  
+        """
+        Choose a fruit to target. The fruit is chosen with a neural network from the fruits the agent knows about.
+        """
+        # check that the agent has a high enough level to load any fruit
+        fruit_levels = [fruit.level for fruit in self.known_fruits]
+        assert self.level >= np.min(fruit_levels), f"All fruits are higher level than the agent {self.level}"
+        
+        # If the agent has no current target or the current target is no longer on the map in the fruit infos, choose a new target
+        fruit_positions = np.array([fruit.position for fruit in self.known_fruits])
+        if self.target:
+            current_target_still_in_game = np.any(np.all(self.target.position == fruit_positions, axis=1))
+        if (self.target is None or not current_target_still_in_game):            
+            # get all possible level sums for cooperative play
+            coop_levels = self.get_possible_coop_level_sums([agent["level"] for agent in self.known_agents])
+            # get all fruits loadable by the agent alone or through cooperation
+            feasible_fruits = [fruit for fruit in self.known_fruits if fruit.level in coop_levels]
             
-            fruit_distances = self.get_distances_agents_fruits()
+            # TODO NN
+            # for fruit in feasible_fruits:
+                # training_data = self.get_distances_agents_fruits(fruit)
             
-            # just for testing without nn. If the agent has no current target or 
-            # the current target is no longer on the map in the fruit infos, choose a new target
-            fruit_positions = np.array([fruit.position for fruit in self.known_fruits])
-            if self.target:
-                current_target_still_in_game = np.any(np.all(self.target.position == fruit_positions, axis=1))
-            if (self.target is None or not current_target_still_in_game):
-                # choose a new target fruit     
-                feasible_fruits_position = [fruit for fruit in self.known_fruits if fruit.level <= level]
-                # TODO: if the fruits are all higher level than the agents, this throws an error
-                # TODO: level of other players is also important to cooperate. If a fruit has a level != to a sum of players level it can not be chosen 
-                self.target = random.choice(feasible_fruits_position)
+            self.target = random.choice(feasible_fruits)
   
     
-    def get_distances_agents_fruits(self):
+    def get_training_info(self, fruit):
         fruit_distances = []
         for agent in self.known_agents: 
-            fruit_distances_per_agent = [] 
-            for fruit in self.known_fruits:
-                closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - agent["position"]))
-                distance_to_fruit = len(self.get_path(agent["position"], closest_free_slot))
-                fruit_distances_per_agent.append({"fruit_position": fruit.position, "distance": distance_to_fruit})
-            fruit_distances.append({"agent_id": agent["id"], "fruit_distances": fruit_distances_per_agent})
-            
+            closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - agent["position"]))
+            distance_to_fruit = len(self.get_path(agent["position"], closest_free_slot))
+            fruit_distances.append({"agent_id": agent["id"], "distance": distance_to_fruit, "fruit_level": fruit.level})
         return fruit_distances
+    
+    
+    def get_possible_coop_level_sums(self, levels):
+        """ 
+        Get the possible level sums for cooperative play. Max four players can cooperate
+        
+        Args:
+            levels (list[int]): the levels of the agents
+        
+        """
+        duo_coop_levels = pd.Series([np.sum(levels) for levels in list(itertools.combinations(levels, 2))]).unique().tolist()
+        tripple_coop_levels = pd.Series([np.sum(levels) for levels in list(itertools.combinations(levels, 3))]).unique().tolist()
+        squad_coop_levels = pd.Series([np.sum(levels) for levels in list(itertools.combinations(levels, 4))]).unique().tolist()
+
+        res = np.sort(pd.Series([self.level] + duo_coop_levels + tripple_coop_levels + squad_coop_levels).unique())
+        
+        return res
     
     """Pathfinding to chosen target"""
     

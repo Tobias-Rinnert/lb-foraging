@@ -7,7 +7,7 @@
 <!-- TABLE OF CONTENTS -->
 <h1> Table of Contents </h1>
 
-- Tobias Rinnert project
+- [Tobias Rinnert project]
 [About The Project](#about-the-project)
 - [Getting Started](#getting-started)
   - [Installation](#installation)
@@ -24,6 +24,14 @@
 <!-- Tobias Rinnert project -->
 # Tobias Rinnert project
 This is a fork of lbf_foraging in which I want to implement my own RL algorithm to play around with ideas about RL and social simulations. 
+The idea is to first automate walking and loading with astar so that the only decision to make is to choose a fruit to walk to and load. This decision is dependent on the first order beliefe about the chosen fruit of the other agents. A neural network will be implemented that estimates these first oder beliefs. One main focus of this project is to use the simplest and most efficient models. Therefore walking is automated so that the neural network can focus on estimating the actual stochastic process. Furthermore I want to find out if Q values are still necessary in this setup. While estimating when a fruit is going to be loaded is still relevant it might not be necessary to include time as a factor in the estimation but rather just which fruit is going to be loaded by which player. 
+
+I have slightly altered the source code of lb-foraging. Mainly to get all the information in a convenient way from the observation but I also added ids for the agents. 
+Furthermore I editied the logic for two agents who want to go to the same cell. If two agents want to get to the same cell, than one of them fails randomely while the other succeeds. 
+
+The rest of the project is inside the tr_lbf_addon dir and currently also in the workbench.ipynb where I develop code and ran tests. The tr_lbf_addon fir holds two files: 
+- lbf_gym.py holds the training ground for the agents and acts as a manager for taking new input and updating the agents and fruits. 
+- lbf_elements.py holds two classes: Fruits and agents. Decision making is handeled by the agent class. 
 
 > [!CAUTION]
 > The LBF environment was updated to support the new [Gymnasium](https://gymnasium.farama.org/) interface in replacement of the deprecated `gym=0.21` dependency (many thanks @LukasSchaefer). For backwards compatibility, please see [Gymnasium compatibility documentation](https://gymnasium.farama.org/content/gym_compatibility/) or use version v1.1.1 of the repository. The main changes to the interface are as follows:

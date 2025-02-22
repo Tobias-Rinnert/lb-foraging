@@ -120,6 +120,8 @@ class Lbf_Gym(Agent, Fruit):
             # get the agent with the id of the new player info          
             id = new_player_info["id"]
             agent = [agent for agent in self.agents if agent.id == id][0]
+            # increment the round counter
+            agent.round_counter += 1
             # pass the new path_finding_grid to the agent
             agent.path_finding_grid = self.create_path_finding_grid(agent)
             # pass information about the fruits and agents to the agent
@@ -132,6 +134,7 @@ class Lbf_Gym(Agent, Fruit):
             agent.position_history.append(new_position)
             # update the level
             agent.level = new_player_info["level"]
+            # agent.learn()
 
             
             
@@ -160,7 +163,7 @@ class Lbf_Gym(Agent, Fruit):
             # get all agents around the agent
             agents_around_agent = [other_agent for other_agent in self.agents if other_agent.position.tolist() in fields_around_agent.tolist()]
             for other_agent in agents_around_agent:
-                # if the agent is loading, set it as an obstacle
+                # if the agent around the agent is loading, set it as an obstacle
                 if other_agent.is_loading:
                     path_finding_grid[*agent.position] = 0
         

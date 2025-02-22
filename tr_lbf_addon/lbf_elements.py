@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
+from keras import models
+from keras import layers
 
 
 
@@ -39,17 +41,20 @@ class Agent():
         self.level = level
         self.id = id
         
+        self.round_counter = 0 # the current round of the game
         self.known_fruits: list[Fruit] = None # the fruits the agent knows about
         self.known_agents: list[dict] = None # information about other agents the agent knows about
         self.target: Fruit = None
         self.position_history: list[np.array] = [] # the hiostory of teh positions of the agent
-        self.last_action: np.int64 = None # the last action of the agent
+        self.last_action: np.int64 = None # the last action of the agent TODO is this needed?
         self.memory_size: int = 3 # the size of the memory of the agent when remembering the last positions of players from their position histories
         self.is_loading: bool = False
         self.path_goal: np.array = None # the current slot of the fruit the agent is targeting
         self.path_finding_grid: np.array = None
         self.current_path: np.array = None
         self.pathfinding_alg = AStarFinder(diagonal_movement=DiagonalMovement.never) # pathfinding algorithm for the agent
+        self.neural_network = None # the neural network for the agent to choose a fruit to target
+        self.predictions: list[dict] = [] # the predictions of the neural network 
 
     
     def __repr__(self):
@@ -164,23 +169,95 @@ class Agent():
         if (self.target is None or not current_target_still_in_game):            
             # get all possible level sums for cooperative play
             coop_levels = self.get_possible_coop_level_sums([agent["level"] for agent in self.known_agents])
-            # get all fruits loadable by the agent alone or through cooperation
-            feasible_fruits = [fruit for fruit in self.known_fruits if fruit.level in coop_levels]
+            # get all fruits loadable by the agent alone or through cooperation and all fruits with an level <= agent level
+            feasible_fruits = [fruit for fruit in self.known_fruits if fruit.level in coop_levels or fruit.level <= self.level]
             
-            # TODO NN
-            # for fruit in feasible_fruits:
-                # training_data = self.get_distances_agents_fruits(fruit)
+            # go through each fruit and predict for each player if the fruit is going to e chosen
+            known_agents_id = [agent["id"] for agent in self.known_agents] + [self.id]
+            for fruit in feasible_fruits:
+                training_data = self.get_training_data(fruit)
+                for agent_id in known_agents_id:
+                    # prepare input into shape for the neural network
+                    training_data.sort_index(inplace=True)
+                    agents_info = training_data.loc[agent_id]
+                    training_data.drop(id, inplace=True)
+                    training_data = np.array([training_data["fruit_level"].iloc[0]] 
+                                             + agents_info.tolist() 
+                                             + training_data["level"].tolist() 
+                                             + training_data["distance_to_fruit"].tolist())
+                    training_data = training_data.reshape(1,len(input))
+                    # predict if the fruit is going to be chosen
+                    y_pred = self.neural_network.predict(training_data)
+                    # save the prediction 
+                    self.predictions.append({"round": self.round_counter,
+                                             "agent_id": agent_id, 
+                                             "trainings_data": training_data, 
+                                             "prediction": y_pred, 
+                                             "ground_truth": None,
+                                             "fruit_pos": fruit.position})
+                
+                
             
-            self.target = random.choice(feasible_fruits)
+            # self.target = random.choice(feasible_fruits)
   
     
-    def get_training_info(self, fruit):
-        fruit_distances = []
+    def get_training_data(self, fruit):
+        training_data = []
+        
+        # get distance to fruit of other agents
         for agent in self.known_agents: 
-            closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - agent["position"]))
+            closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - agent["position"])) 
             distance_to_fruit = len(self.get_path(agent["position"], closest_free_slot))
-            fruit_distances.append({"agent_id": agent["id"], "distance": distance_to_fruit, "fruit_level": fruit.level})
-        return fruit_distances
+            training_data.append({"agent_id": agent["id"], "level": agent["level"],"distance_to_fruit": distance_to_fruit})
+        
+        # get distance to fruit of agent self
+        closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - self.position))
+        distance_to_fruit = len(self.get_path(self.position, closest_free_slot))
+        training_data.append({"agent_id": self.id, "level": self.level, "distance_to_fruit": distance_to_fruit})
+        
+        # create a dataframe from the training data and set the index to the agent id
+        training_data = pd.DataFrame(training_data)
+        training_data.set_index("id", inplace=True)
+
+        # normalize the levels with min max scaling
+        max_level = training_data["level"].max()
+        min_level = training_data["level"].min()
+        training_data["level"] = (training_data["level"] - min_level) / (max_level - min_level)
+
+        # normalize the distance to the fruit with min max scaling
+        max_distance = training_data["distance_to_fruit"].max()
+        min_distance = training_data["distance_to_fruit"].min()
+        training_data["distance_to_fruit"] = (training_data["distance_to_fruit"] - min_distance) / (max_distance - min_distance)
+
+        # normalize the fruit level with min max scaling
+        min_fruit_level = min([fruit.level for fruit in self.known_fruits])
+        max_fruit_level = max([fruit.level for fruit in self.known_fruits])
+        fruit_level = (fruit.level - min_fruit_level) / (max_fruit_level - min_fruit_level)
+        training_data["fruit_level"] = fruit_level
+                
+        return training_data
+    
+    
+    
+    def init_neural_network(self) -> models.Sequential:
+        """
+        Initialize the neural network for the agent to choose a fruit to target.
+
+        Returns:
+            models.Sequential: neural network model
+        """
+        # Create a Sequential model
+        model = models.Sequential()
+        # input layer size = level and distance to fruit for each player in the game + the level of the fruit
+        input_layer_size = (len(self.known_agents) + 1) * 2 + 1 
+        model.add(layers.Input(shape=(input_layer_size,)))
+        # define the hidden layers
+        model.add(layers.Dense(5, activation='relu'))
+        # output layer giving the probability for a fruit being chosen
+        model.add(layers.Dense(1, activation='sigmoid'))
+        # model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
+        self.neural_network = model
+        
     
     
     def get_possible_coop_level_sums(self, levels):
@@ -198,6 +275,9 @@ class Agent():
         res = np.sort(pd.Series([self.level] + duo_coop_levels + tripple_coop_levels + squad_coop_levels).unique())
         
         return res
+    
+    
+    
     
     """Pathfinding to chosen target"""
     

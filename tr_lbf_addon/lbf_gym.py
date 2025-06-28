@@ -154,7 +154,7 @@ class Lbf_Gym(Agent, Fruit):
         for fruit in self.fruits:
             path_finding_grid[*fruit.position] = 0
             
-        if self.agents is not None: #TODO check if this is necessary. Should be something ith initialization 
+        if self.agents is not None: #TODO check if this is necessary. Should be something in initialization 
             # get all fields around the agent
             fields_around_agent = np.array([agent.position + np.array([0, 1]),
                                 agent.position + np.array([0, -1]),

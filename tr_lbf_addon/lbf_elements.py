@@ -46,7 +46,7 @@ class Agent():
         self.known_agents: list[dict] = None # information about other agents the agent knows about
         self.target: Fruit = None
         self.position_history: list[np.array] = [] # the hiostory of teh positions of the agent
-        self.last_action: np.int64 = None # the last action of the agent TODO is this needed?
+        self.last_action: np.int64 = None # the last action of the agent TODO not needed right now but couold be used later
         self.memory_size: int = 3 # the size of the memory of the agent when remembering the last positions of players from their position histories
         self.is_loading: bool = False
         self.path_goal: np.array = None # the current slot of the fruit the agent is targeting
@@ -82,10 +82,10 @@ class Agent():
     
     def choose_next_action(self) -> np.int64:
         """
-        TODO: update the description
+        Chooose between walking directions or loading a fruit.
         
         Returns:
-            str: the next action of the player one of 1, 2, 3, 4, 5
+            str: the next action of the player one of 1, 2, 3, 4, 5 representing the directions and load
         """
         
         # check which of the free slots of the chosen fruit is closest to the current position 
@@ -96,7 +96,7 @@ class Agent():
             next_action = "load"
             return self.action_string_to_int(next_action)
 
-        # TODO: if optimization is neccessary introduce confitions when to not update path
+        # TODO: if optimization is neccessary introduce conditions when to not update path
         self.current_path = self.get_path(self.position, self.path_goal)
             
         # get the next position in the path given the current position
@@ -156,7 +156,12 @@ class Agent():
     
     def choose_fruit(self):  
         """
-        Choose a fruit to target. The fruit is chosen with a neural network from the fruits the agent knows about.
+        Choose a fruit to target. The agent does a predicition for each other fruit, which players will choose it as a target.
+        Given the predicitions he will choose the one which maximizes the expected reward.
+        Where he predicts that anothe player is going to target a fruit, 
+        and get there before him and will be able to load the fruit alone,
+        the expected reward will be pred*0 + the expected rewards for teh other players probability to choose that fruit 
+        TODO: COmmunication between agents about cooperation?
         """
         # check that the agent has a high enough level to load any fruit
         fruit_levels = [fruit.level for fruit in self.known_fruits]
@@ -172,15 +177,17 @@ class Agent():
             # get all fruits loadable by the agent alone or through cooperation and all fruits with an level <= agent level
             feasible_fruits = [fruit for fruit in self.known_fruits if fruit.level in coop_levels or fruit.level <= self.level]
             
-            # go through each fruit and predict for each player if the fruit is going to e chosen
+            # go through each fruit and predict for each player if the fruit is going to be chosen
             known_agents_id = [agent["id"] for agent in self.known_agents] + [self.id]
             for fruit in feasible_fruits:
-                training_data = self.get_training_data(fruit)
+                training_data = self.get_training_data_per_fruit(fruit)
                 for agent_id in known_agents_id:
                     # prepare input into shape for the neural network
                     training_data.sort_index(inplace=True)
                     agents_info = training_data.loc[agent_id]
                     training_data.drop(id, inplace=True)
+                    # trainings data is a list of the fruit level, the agents info, the other agents level sorted after id 
+                    # and the other agents agentsdistance to the fruit sorted after id
                     training_data = np.array([training_data["fruit_level"].iloc[0]] 
                                              + agents_info.tolist() 
                                              + training_data["level"].tolist() 
@@ -196,12 +203,17 @@ class Agent():
                                              "ground_truth": None,
                                              "fruit_pos": fruit.position})
                 
-                
+            # TODO !: Implement the function to choose a fruit based on teh prediction. See description of this function for details. (Expected rewards) 
+            # Then implement function to train the model whenever a fruit was loaded based on the recorded predicitions.
+            # For each of teh predicitions regarding the fruit that was loaded, do a forward pass and backward pass. 
+            # Both is done in the fit function from keras (model.fit(input, ground_truth)). So eventhough a predicition has already been made, 
+            # a new one must be made before the backwards pass, since the weights could have changed since the predicition was made          
             
+            # line for testing purposes
             # self.target = random.choice(feasible_fruits)
   
     
-    def get_training_data(self, fruit):
+    def get_training_data_per_fruit(self, fruit):
         training_data = []
         
         # get distance to fruit of other agents
@@ -255,7 +267,7 @@ class Agent():
         model.add(layers.Dense(5, activation='relu'))
         # output layer giving the probability for a fruit being chosen
         model.add(layers.Dense(1, activation='sigmoid'))
-        # model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
+        model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
         self.neural_network = model
         
     

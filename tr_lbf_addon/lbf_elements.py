@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import itertools
-import random
 from dataclasses import dataclass
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
@@ -185,7 +184,8 @@ class Agent():
                     # prepare input into shape for the neural network
                     training_data.sort_index(inplace=True)
                     agents_info = training_data.loc[agent_id]
-                    training_data.drop(id, inplace=True)
+                    training_data.reset_index(inplace=True)
+                    training_data.drop(columns = "agent_id", inplace=True)
                     # trainings data is a list of the fruit level, the agents info, the other agents level sorted after id 
                     # and the other agents agentsdistance to the fruit sorted after id
                     training_data = np.array([training_data["fruit_level"].iloc[0]] 
@@ -229,7 +229,7 @@ class Agent():
         
         # create a dataframe from the training data and set the index to the agent id
         training_data = pd.DataFrame(training_data)
-        training_data.set_index("id", inplace=True)
+        training_data.set_index("agent_id", inplace=True)
 
         # normalize the levels with min max scaling
         max_level = training_data["level"].max()

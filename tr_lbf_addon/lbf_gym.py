@@ -6,7 +6,7 @@ from .lbf_elements import Agent, Fruit
 
 #TODO: unittests
 
-class Lbf_Gym(Agent, Fruit):   
+class LBF_GYM(Agent, Fruit):   
     """
     Class to handle the observation from the lbf environment and train the agents. Inherits from Agent and Fruit classes.
     """

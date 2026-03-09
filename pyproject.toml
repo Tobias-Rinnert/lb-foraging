@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tr-lbf-foraging"
+version = "0.1.0"
+description = "RL agents for cooperative foraging using first-order belief estimation"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "gymnasium",
+    "keras",
+    "tensorflow",
+    "pathfinding",
+    "pyglet<2",
+    "six",
+    "plotly",
+    "networkx",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["tr_lbf_addon*", "lbforaging*"]

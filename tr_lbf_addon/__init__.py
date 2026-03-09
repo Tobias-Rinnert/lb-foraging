@@ -1,1 +1,1 @@
-from .lbf_gym import LBF_Gym
+from .lbf_gym import LBF_GYM

@@ -272,20 +272,22 @@ class Agent():
         
     
     
-    def get_possible_coop_level_sums(self, levels):
-        """ 
-        Get the possible level sums for cooperative play. Max four players can cooperate
-        
-        Args:
-            levels (list[int]): the levels of the agents
-        
+    def get_possible_coop_level_sums(self, other_agent_levels):
         """
-        duo_coop_levels = pd.Series([np.sum(levels) for levels in list(itertools.combinations(levels, 2))]).unique().tolist()
-        tripple_coop_levels = pd.Series([np.sum(levels) for levels in list(itertools.combinations(levels, 3))]).unique().tolist()
-        squad_coop_levels = pd.Series([np.sum(levels) for levels in list(itertools.combinations(levels, 4))]).unique().tolist()
+        Get the possible level sums for cooperative play. Max four players can cooperate.
 
-        res = np.sort(pd.Series([self.level] + duo_coop_levels + tripple_coop_levels + squad_coop_levels).unique())
-        
+        Args:
+            other_agent_levels (list[int]): the levels of the other agents (not including self)
+
+        """
+        all_levels = [self.level] + other_agent_levels
+
+        duo_coop_levels = pd.Series([np.sum(combo) for combo in itertools.combinations(all_levels, 2)]).unique().tolist()
+        triple_coop_levels = pd.Series([np.sum(combo) for combo in itertools.combinations(all_levels, 3)]).unique().tolist()
+        squad_coop_levels = pd.Series([np.sum(combo) for combo in itertools.combinations(all_levels, 4)]).unique().tolist()
+
+        res = np.sort(pd.Series([self.level] + duo_coop_levels + triple_coop_levels + squad_coop_levels).unique())
+
         return res
     
     

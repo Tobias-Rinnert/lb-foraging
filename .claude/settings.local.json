@@ -15,7 +15,8 @@
       "Bash(.venv/Scripts/python.exe --version)",
       "Bash(.venv/Scripts/python.exe -m pip install ipykernel)",
       "Bash(python -m venv .venv)",
-      "Bash(.venv/Scripts/python.exe -m pip install -e . ipykernel)"
+      "Bash(.venv/Scripts/python.exe -m pip install -e . ipykernel)",
+      "Bash(.venv/Scripts/python.exe -m pytest tr_lbf_addon/tests/ -v --tb=short)"
     ]
   }
 }

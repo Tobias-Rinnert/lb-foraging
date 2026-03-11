@@ -1,22 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 -c \"import json; f = open\\(''workbench.ipynb''\\); nb = json.load\\(f\\); cells = [cell for cell in nb[''cells''] if cell[''cell_type''] == ''code'']; [print\\(''''.join\\(cell[''source''][:200]\\) + ''\\\\n---''\\) for cell in cells[:5]]\")",
-      "Bash(wc -l lbforaging/agents/*.py lbforaging/foraging/*.py)",
-      "Bash(pip install -e .)",
-      "Bash(python -c \"import lbforaging; print\\(''lbforaging OK''\\); from tr_lbf_addon.lbf_gym import Lbf_Gym; print\\(''tr_lbf_addon OK''\\); from lbforaging.agents import H1; print\\(''agents OK''\\)\")",
-      "Bash(python -c \"import lbforaging; print\\(''lbforaging OK''\\); from lbforaging.agents import H1; print\\(''lbforaging.agents OK''\\)\")",
-      "Bash(python -c \":*)",
-      "Bash(python -c \"import json; nb=json.load\\(open\\(''workbench.ipynb''\\)\\); print\\(json.dumps\\(nb.get\\(''metadata'',{}\\).get\\(''kernelspec'',{}\\), indent=2\\)\\)\")",
-      "Bash(python -c \"import json; nb=json.load\\(open\\(''workbench.ipynb'', encoding=''utf-8''\\)\\); print\\(json.dumps\\(nb.get\\(''metadata'',{}\\).get\\(''kernelspec'',{}\\), indent=2\\)\\)\")",
-      "Bash(.venv/Scripts/python.exe -m ipykernel install --user --name=lb-foraging-venv --display-name \".venv \\(lb-foraging\\)\")",
-      "Bash(.venv/Scripts/pip.exe install ipykernel)",
-      "Bash(.venv/Scripts/python.exe -c \"print\\(''hello''\\)\")",
-      "Bash(.venv/Scripts/python.exe --version)",
-      "Bash(.venv/Scripts/python.exe -m pip install ipykernel)",
-      "Bash(python -m venv .venv)",
-      "Bash(.venv/Scripts/python.exe -m pip install -e . ipykernel)",
-      "Bash(.venv/Scripts/python.exe -m pytest tr_lbf_addon/tests/ -v --tb=short)"
+      "Bash(C:/Users/bobis/development/**)",
+      "Edit:C:/Users/bobis/development/lb-foraging/**",
+      "Write:C:/Users/bobis/development/lb-foraging/**",
+      "Read:C:/Users/bobis/development/lb-foraging/**"
     ]
   }
 }

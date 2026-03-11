@@ -1,10 +1,14 @@
 {
   "permissions": {
+    "defaultMode": "acceptEdits",
     "allow": [
-      "Bash(C:/Users/bobis/development/**)",
+      "Bash(*)",
       "Edit:C:/Users/bobis/development/lb-foraging/**",
       "Write:C:/Users/bobis/development/lb-foraging/**",
-      "Read:C:/Users/bobis/development/lb-foraging/**"
+      "Read:C:/Users/bobis/development/lb-foraging/**",
+      "Read:C:/Users/bobis/.claude/plans/**",
+      "Edit:C:/Users/bobis/.claude/plans/**",
+      "Write:C:/Users/bobis/.claude/plans/**"
     ]
   }
 }

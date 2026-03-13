@@ -1,3 +1,7 @@
+import os
+import math
+
+
 def effective_cell_size(canvas_px: float, field_size: int, zoom: float) -> float:
     """Return the pixel size of one grid cell after applying zoom."""
     return (canvas_px / field_size) * zoom
@@ -32,19 +36,57 @@ def detail_level(effective_cell_px: float) -> str:
 
 import tkinter as tk
 
-# 10-colour palette for agents (by index)
+# Resolve icon paths relative to the project's lbforaging package
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ICON_DIR = os.path.join(_PROJECT_ROOT, "lbforaging", "foraging", "icons")
+_AGENT_ICON_PATH = os.path.join(_ICON_DIR, "agent.png")
+_APPLE_ICON_PATH = os.path.join(_ICON_DIR, "apple.png")
+
+# 10-colour palette for agents
 _AGENT_COLOURS = [
     "#E63946", "#457B9D", "#2A9D8F", "#E9C46A", "#F4A261",
     "#6A4C93", "#1982C4", "#8AC926", "#FF595E", "#6A0572",
 ]
-_FRUIT_COLOUR = "#FF8C00"
 _FREE_SLOT_COLOUR = "#CCCCCC"
 _GRID_COLOUR = "#DDDDDD"
+_BADGE_BG = "white"
+_BADGE_OUTLINE = "black"
 _CANVAS_PX = 600
 
 
+def _scale_photo(source: tk.PhotoImage, target_size: int) -> tk.PhotoImage:
+    """Scale a tk.PhotoImage to approximately target_size using zoom + subsample.
+
+    Uses integer zoom/subsample to get close to the desired size.
+    """
+    src_size = source.width()
+    if src_size <= 0 or target_size <= 0:
+        return source
+
+    # Calculate best integer zoom and subsample factors
+    # We want: (src_size * zoom_factor) / subsample_factor ≈ target_size
+    # Try zoom first, then subsample to get closest match
+    if target_size >= src_size:
+        zoom_factor = max(1, round(target_size / src_size))
+        subsample_factor = max(1, round((src_size * zoom_factor) / target_size))
+    else:
+        zoom_factor = 1
+        subsample_factor = max(1, round(src_size / target_size))
+
+    result = source
+    if zoom_factor > 1:
+        result = result.zoom(zoom_factor)
+    if subsample_factor > 1:
+        result = result.subsample(subsample_factor)
+    return result
+
+
 class BoardCanvas(tk.Canvas):
-    """Tkinter Canvas that draws the LBF game board.
+    """Tkinter Canvas that draws the LBF game board using original sprites.
+
+    Uses agent.png (person silhouette) and apple.png from the lbforaging icons.
+    Level badges are drawn as white circles with the level number, matching
+    the original LBF rendering style.
 
     Call draw(runner) after each game step to redraw.
     Supports mouse-wheel zoom (centred on cursor) and click-drag pan.
@@ -59,6 +101,13 @@ class BoardCanvas(tk.Canvas):
         self._drag_start: tuple[float, float] | None = None
         self._drag_pan_start: tuple[float, float] | None = None
 
+        # Load source sprite images
+        self._agent_src = tk.PhotoImage(file=_AGENT_ICON_PATH)
+        self._apple_src = tk.PhotoImage(file=_APPLE_ICON_PATH)
+
+        # Cache for scaled PhotoImage references (prevents GC collection)
+        self._photo_refs: list[tk.PhotoImage] = []
+
         self.bind("<MouseWheel>", self._on_mousewheel)        # Windows
         self.bind("<Button-4>", self._on_mousewheel)          # Linux scroll up
         self.bind("<Button-5>", self._on_mousewheel)          # Linux scroll down
@@ -70,6 +119,7 @@ class BoardCanvas(tk.Canvas):
     def draw(self, runner) -> None:
         """Redraw the board from the current runner state."""
         self.delete("all")
+        self._photo_refs.clear()
         if runner.lbf_gym is None:
             return
         field_size = runner.params["field_size"]
@@ -88,10 +138,34 @@ class BoardCanvas(tk.Canvas):
         self.pan_x = 0.0
         self.pan_y = 0.0
 
+    # -- private: sprite helpers -----------------------------------------------
+
+    def _get_scaled_sprite(self, source: tk.PhotoImage, target_size: int) -> tk.PhotoImage:
+        """Scale a sprite and keep a reference to prevent garbage collection."""
+        photo = _scale_photo(source, target_size)
+        self._photo_refs.append(photo)
+        return photo
+
+    def _draw_level_badge(self, cell_x: float, cell_y: float, level: int, cell: float) -> None:
+        """Draw a circular level badge at bottom-right of cell (original LBF style)."""
+        badge_radius = cell / 5
+        badge_cx = cell_x + cell * 0.75
+        badge_cy = cell_y + cell * 0.25
+        self.create_oval(
+            badge_cx - badge_radius, badge_cy - badge_radius,
+            badge_cx + badge_radius, badge_cy + badge_radius,
+            fill=_BADGE_BG, outline=_BADGE_OUTLINE, width=1,
+        )
+        self.create_text(
+            badge_cx, badge_cy,
+            text=str(int(level)),
+            font=("Times New Roman", max(7, int(badge_radius * 1.2)), "bold"),
+            fill="black",
+        )
+
     # -- private: zoom/pan -----------------------------------------------------
 
     def _on_mousewheel(self, event) -> None:
-        # Determine scroll direction (cross-platform)
         if event.num == 4:
             delta = 1
         elif event.num == 5:
@@ -102,14 +176,12 @@ class BoardCanvas(tk.Canvas):
         cx, cy = float(event.x), float(event.y)
         field_size_guess = max(1, int(_CANVAS_PX / max(1.0, effective_cell_size(_CANVAS_PX, 1, self.zoom))))
         cell = effective_cell_size(_CANVAS_PX, max(field_size_guess, 1), self.zoom)
-        # World coords under cursor before zoom
         world_col = (cx - self.pan_x) / cell
         world_row = (cy - self.pan_y) / cell
 
         factor = 1.1 if delta > 0 else 1.0 / 1.1
         self.zoom = max(0.5, min(10.0, self.zoom * factor))
 
-        # Recompute cell with new zoom and fix pan so cursor stays on same world point
         new_cell = effective_cell_size(_CANVAS_PX, max(field_size_guess, 1), self.zoom)
         self.pan_x = cx - world_col * new_cell
         self.pan_y = cy - world_row * new_cell
@@ -150,18 +222,20 @@ class BoardCanvas(tk.Canvas):
                                  fill=_FREE_SLOT_COLOUR, outline="")
 
     def _draw_fruits(self, fruits, cell: float, dlevel: str) -> None:
-        pad = cell * 0.15
+        sprite_size = max(4, int(cell * 0.8))
         for fruit in fruits:
             r, c = int(fruit.position[0]), int(fruit.position[1])
             x0, y0 = world_to_canvas(r, c, cell, self.pan_x, self.pan_y)
-            self.create_oval(x0 + pad, y0 + pad,
-                             x0 + cell - pad, y0 + cell - pad,
-                             fill=_FRUIT_COLOUR, outline="#CC6600", width=1)
-            if dlevel == "full":
-                self.create_text(x0 + cell / 2, y0 + cell / 2,
-                                 text=str(int(fruit.level)),
-                                 font=("Arial", max(8, int(cell * 0.3)), "bold"),
-                                 fill="white")
+
+            if dlevel == "minimal":
+                pad = cell * 0.2
+                self.create_oval(x0 + pad, y0 + pad, x0 + cell - pad, y0 + cell - pad,
+                                 fill="#D32F2F", outline="")
+            else:
+                photo = self._get_scaled_sprite(self._apple_src, sprite_size)
+                self.create_image(x0 + cell / 2, y0 + cell / 2, image=photo, anchor=tk.CENTER)
+                if dlevel == "full":
+                    self._draw_level_badge(x0, y0, fruit.level, cell)
 
     def _draw_target_arrows(self, agents, cell: float) -> None:
         for agent in agents:
@@ -178,24 +252,25 @@ class BoardCanvas(tk.Canvas):
                              fill=colour, dash=(4, 3), width=1, arrow=tk.LAST)
 
     def _draw_agents(self, agents, cell: float, dlevel: str) -> None:
+        sprite_size = max(4, int(cell * 0.8))
         for agent in agents:
             colour = _AGENT_COLOURS[agent.id % len(_AGENT_COLOURS)]
             r, c = int(agent.position[0]), int(agent.position[1])
             x0, y0 = world_to_canvas(r, c, cell, self.pan_x, self.pan_y)
+
             if dlevel == "minimal":
-                # dot only
                 dot_r = max(2.0, cell * 0.3)
                 cx, cy = x0 + cell / 2, y0 + cell / 2
-                self.create_oval(cx - dot_r, cy - dot_r,
-                                 cx + dot_r, cy + dot_r,
+                self.create_oval(cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r,
                                  fill=colour, outline="")
             else:
+                # Draw coloured background square to tint the agent
                 pad = cell * 0.1
                 self.create_rectangle(x0 + pad, y0 + pad,
                                       x0 + cell - pad, y0 + cell - pad,
-                                      fill=colour, outline="#333333", width=1)
+                                      fill=colour, outline="", width=0)
+                # Overlay the agent silhouette sprite
+                photo = self._get_scaled_sprite(self._agent_src, sprite_size)
+                self.create_image(x0 + cell / 2, y0 + cell / 2, image=photo, anchor=tk.CENTER)
                 if dlevel == "full":
-                    self.create_text(x0 + cell / 2, y0 + cell / 2,
-                                     text=f"{agent.id}\nL{agent.level}",
-                                     font=("Arial", max(6, int(cell * 0.22))),
-                                     fill="white", justify=tk.CENTER)
+                    self._draw_level_badge(x0, y0, agent.level, cell)

@@ -120,15 +120,22 @@ class LBFApp:
         self._speed_ms = int(self._speed_var.get())
 
     def _open_settings(self) -> None:
-        if self._param_panel is None or not self._param_panel.winfo_exists():
-            self._param_panel = ParamPanel(
-                self.root,
-                self._runner.params,
-                on_apply=self._apply_params,
-            )
-        else:
-            self._param_panel.deiconify()
-            self._param_panel.lift()
+        try:
+            if self._param_panel is not None and self._param_panel.winfo_exists():
+                self._param_panel.deiconify()
+                self._param_panel.lift()
+                self._param_panel.focus_force()
+                return
+        except tk.TclError:
+            self._param_panel = None
+
+        self._param_panel = ParamPanel(
+            self.root,
+            self._runner.params,
+            on_apply=self._apply_params,
+        )
+        self._param_panel.lift()
+        self._param_panel.focus_force()
 
     def _apply_params(self, new_params: dict) -> None:
         self._pause()

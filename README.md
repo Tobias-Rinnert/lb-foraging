@@ -104,6 +104,23 @@ observation, info = env.reset(seed=42)
 manager = Lbf_Gym(observation[0])
 ```
 
+## Game App
+
+A desktop GUI for running and watching the agents play. Uses `tkinter` (Python stdlib).
+
+```sh
+python tr_lbf_addon/app/app.py
+```
+
+**Controls:**
+- **Play / Pause** — start and stop auto-play
+- **Step** — advance one step manually (works while paused)
+- **Speed slider** — adjust step delay (20ms - 2000ms)
+- **Fit** — reset zoom and pan to show the full board
+- **Mouse wheel** — zoom in/out centred on cursor
+- **Click + drag** — pan when zoomed in
+- **Settings** — open parameter popup; click "Apply & Restart" to rebuild with new params
+
 ## Attribution
 
 The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` for the original license.

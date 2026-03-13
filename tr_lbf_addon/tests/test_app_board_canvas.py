@@ -55,3 +55,8 @@ def test_detail_level_boundary_40():
 
 def test_detail_level_boundary_20():
     assert detail_level(19.9) == "minimal"
+
+
+def test_board_canvas_importable():
+    """BoardCanvas can be imported without a display."""
+    from tr_lbf_addon.app import board_canvas  # noqa: F401

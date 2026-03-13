@@ -30,6 +30,7 @@ def default_params() -> dict:
         "normalize_reward": True,
         "observe_agent_levels": True,
         "full_info_mode": True,
+        "fallback_to_closest": True,
     }
 
 
@@ -65,7 +66,9 @@ class GameRunner:
         if self.episode_over:
             return
         self.lbf_gym.update_observation(self.observation[0])
-        actions = self.lbf_gym.agents_choose_actions()
+        actions = self.lbf_gym.agents_choose_actions(
+            fallback_to_closest=self.params.get("fallback_to_closest", True),
+        )
         self.observation, reward, terminated, truncated, _ = self.env.step(tuple(actions))
         self.rewards = list(reward)
         self.step_count += 1

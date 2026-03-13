@@ -58,6 +58,7 @@ class ParamPanel(tk.Toplevel):
             ("Normalize reward", "normalize_reward",    "check",    None, None, params),
             ("Observe levels",   "observe_agent_levels", "check",   None, None, params),
             ("Full info mode",   "full_info_mode",      "readonly", None, None, params),
+            ("Closest fallback", "fallback_to_closest", "check",    None, None, params),
         ])
 
         btn_frame = ttk.Frame(outer)

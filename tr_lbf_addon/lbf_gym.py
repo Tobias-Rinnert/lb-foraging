@@ -168,16 +168,20 @@ class LBF_GYM(Agent, Fruit):
         return path_finding_grid
     
     
-    def agents_choose_actions(self) -> list[str]:
+    def agents_choose_actions(self, fallback_to_closest: bool = True) -> list[str]:
         """Choose the next action for each agent.
 
-        Calls choose_fruit() for target selection, then falls back to the closest reachable
-        fruit if no target was assigned (e.g. when the NN is not yet initialised).
+        Calls choose_fruit() for target selection, then optionally falls back to the closest
+        reachable fruit if no target was assigned (e.g. when the NN is not yet initialised).
+
+        Args:
+            fallback_to_closest: if True, assign the closest reachable fruit when
+                choose_fruit() yields None. If False, the agent stays idle.
         """
         actions = []
         for agent in self.agents:
             agent.choose_fruit()
-            if agent.target is None:
+            if agent.target is None and fallback_to_closest:
                 agent.target = self._fallback_target(agent)
             action = agent.choose_next_action()
             agent.last_action = action

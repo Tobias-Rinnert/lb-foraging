@@ -20,6 +20,7 @@ class ParamPanel(tk.Toplevel):
         self.resizable(False, False)
         self._on_apply = on_apply
         self._vars: dict[str, tk.Variable] = {}
+        self._readonly_keys: set[str] = set()
         self._build(dict(params))
 
     # -- public ----------------------------------------------------------------
@@ -40,7 +41,7 @@ class ParamPanel(tk.Toplevel):
             ("Grid size",  "field_size",        "spin", 4,  50,  params),
             ("Max steps",  "max_episode_steps", "spin", 10, 500, params),
             ("Sight",      "sight",             "spin", 0,  20,  params),
-            ("Coop mode",  "coop_mode",         "check", None, None, params),
+            ("Force coop", "coop_mode",         "check", None, None, params),
         ])
         self._section(outer, "Players", [
             ("Count",      "number_players",    "spin", 1, 15, params),
@@ -53,10 +54,10 @@ class ParamPanel(tk.Toplevel):
             ("Max level",  "max_food_level",    "spin", 1,  5, params),
         ])
         self._section(outer, "Advanced", [
-            ("Penalty",          "penalty",             "scale", 0.0, 1.0, params),
-            ("Normalize reward", "normalize_reward",    "check", None, None, params),
-            ("Observe levels",   "observe_agent_levels", "check", None, None, params),
-            ("Full info mode",   "full_info_mode",      "check", None, None, params),
+            ("Penalty",          "penalty",             "readonly", None, None, params),
+            ("Normalize reward", "normalize_reward",    "check",    None, None, params),
+            ("Observe levels",   "observe_agent_levels", "check",   None, None, params),
+            ("Full info mode",   "full_info_mode",      "readonly", None, None, params),
         ])
 
         btn_frame = ttk.Frame(outer)
@@ -84,6 +85,10 @@ class ParamPanel(tk.Toplevel):
                 ttk.Scale(frame_s, from_=lo, to=hi, variable=var,
                           orient=tk.HORIZONTAL, length=120).pack(side=tk.LEFT)
                 ttk.Label(frame_s, textvariable=var, width=4).pack(side=tk.LEFT)
+            elif widget_type == "readonly":
+                var = tk.StringVar(value=str(params[key]))
+                ttk.Label(row, textvariable=var, foreground="gray").pack(side=tk.LEFT)
+                self._readonly_keys.add(key)
             else:
                 var = tk.StringVar(value=str(params[key]))
             self._vars[key] = var
@@ -92,6 +97,8 @@ class ParamPanel(tk.Toplevel):
         """Read all widget values and call the on_apply callback."""
         params = default_params()
         for key, var in self._vars.items():
+            if key in self._readonly_keys:
+                continue
             params[key] = var.get()
         # Ensure int types for spinbox values
         for int_key in ("field_size", "number_players", "max_num_food",

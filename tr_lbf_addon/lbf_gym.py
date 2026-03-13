@@ -28,18 +28,18 @@ class LBF_GYM(Agent, Fruit):
         
     
     def update_observation(self, observation: dict):
-        """
-        Update the observation with the new observation from the environment.
+        """Update the observation and record ground truth labels for loaded fruits.
+
+        Saves previous fruits before refreshing so that disappeared fruits can be identified
+        and their matching predictions labelled for training.
 
         Args:
             observation (dict): new observation from the environment
         """
-        
-        # get the full info field
+        previous_fruits = list(self.fruits) if self.fruits else []
         self.get_full_info_field(observation)
-        # get the posiitions and level of the fruit
         self.get_fruit_infos()
-        # get the player infos
+        self.record_ground_truth(previous_fruits)
         self.update_agents(observation["player_infos"])
     
     
@@ -134,7 +134,7 @@ class LBF_GYM(Agent, Fruit):
             agent.position_history.append(new_position)
             # update the level
             agent.level = new_player_info["level"]
-            # agent.learn()
+            agent.learn()
 
             
             
@@ -171,22 +171,87 @@ class LBF_GYM(Agent, Fruit):
     
     
     def agents_choose_actions(self) -> list[str]:
-        """
-        Choose the next action for each agent. 
-        A simple wrapper around create_path_finding_grid and choose_next_action
+        """Choose the next action for each agent.
+
+        Calls choose_fruit() for target selection, then falls back to the closest reachable
+        fruit if no target was assigned (e.g. when the NN is not yet initialised).
         """
         actions = []
         for agent in self.agents:
-            
-            # update the target fruit
             agent.choose_fruit()
-            # choose the next action
+            if agent.target is None:
+                agent.target = self._fallback_target(agent)
             action = agent.choose_next_action()
-            # update the last agent action
             agent.last_action = action
-            
             actions.append(action)
         return actions
+
+
+    def _fallback_target(self, agent) -> "Fruit":
+        """Return the closest reachable fruit as a fallback target when choose_fruit() yields None.
+
+        Prefers fruits the agent can load solo (level <= agent.level). If none exist, considers
+        all fruits with free slots. Returns None if no fruits are available.
+
+        Args:
+            agent (Agent): the agent that needs a fallback target
+
+        Returns:
+            Fruit or None: the closest reachable fruit
+        """
+        solo_fruits = [f for f in agent.known_fruits if f.level <= agent.level and f.free_slots]
+        candidates = solo_fruits if solo_fruits else [f for f in agent.known_fruits if f.free_slots]
+        if not candidates:
+            return None
+        return min(
+            candidates,
+            key=lambda f: min(np.linalg.norm(slot - agent.position) for slot in f.free_slots),
+        )
+
+
+    def record_ground_truth(self, previous_fruits: list):
+        """Label predictions for fruits that disappeared (were loaded) since the last observation.
+
+        For each loaded fruit, scans all agents' predictions matching that fruit position and
+        labels them 1.0 if the predicted agent was adjacent to the fruit, 0.0 otherwise.
+
+        Args:
+            previous_fruits (list[Fruit]): the fruit list before the current observation update
+        """
+        if not previous_fruits:
+            return
+
+        current_positions = [f.position for f in self.fruits]
+
+        for prev_fruit in previous_fruits:
+            fruit_still_present = any(
+                np.array_equal(prev_fruit.position, curr_pos) for curr_pos in current_positions
+            )
+            if fruit_still_present:
+                continue
+
+            adjacent_slots = [
+                prev_fruit.position + np.array([0, 1]),
+                prev_fruit.position + np.array([0, -1]),
+                prev_fruit.position + np.array([1, 0]),
+                prev_fruit.position + np.array([-1, 0]),
+            ]
+
+            for agent in self.agents:
+                for prediction in agent.predictions:
+                    if prediction["ground_truth"] is not None:
+                        continue
+                    if not np.array_equal(prediction["fruit_pos"], prev_fruit.position):
+                        continue
+                    predicted_agent = next(
+                        (a for a in self.agents if a.id == prediction["agent_id"]), None
+                    )
+                    if predicted_agent is None:
+                        continue
+                    was_adjacent = any(
+                        np.array_equal(predicted_agent.position, slot) for slot in adjacent_slots
+                    )
+                    prediction["ground_truth"] = 1.0 if was_adjacent else 0.0
     
             
             

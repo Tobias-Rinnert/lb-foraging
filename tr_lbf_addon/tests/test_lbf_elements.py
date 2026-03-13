@@ -332,3 +332,135 @@ class TestInitNeuralNetwork:
         test_input = np.random.rand(1, 5)
         output = agent_a.neural_network.predict(test_input, verbose=0)
         assert 0.0 <= output[0, 0] <= 1.0
+
+
+# ── is_agent_on_predicted_path ────────────────────────────────────────
+
+class TestIsAgentOnPredictedPath:
+    """Tests for is_agent_on_predicted_path — path tracking with cursor advancement."""
+
+    def test_no_prediction_returns_false(self, agent):
+        """Returns False when no prediction exists for the agent."""
+        assert agent.is_agent_on_predicted_path(99, np.array([1, 1])) is False
+
+    def test_position_on_path_returns_true(self, agent):
+        """Returns True when the position is found anywhere on the predicted path."""
+        path = np.array([[0, 0], [0, 1], [0, 2], [0, 3]])
+        agent.predicted_paths[5] = path
+        assert agent.is_agent_on_predicted_path(5, np.array([0, 2])) is True
+
+    def test_position_off_path_returns_false(self, agent):
+        """Returns False when the position is not on the predicted path."""
+        path = np.array([[0, 0], [0, 1], [0, 2]])
+        agent.predicted_paths[5] = path
+        assert agent.is_agent_on_predicted_path(5, np.array([3, 3])) is False
+
+    def test_path_trimmed_to_current_position(self, agent):
+        """Path is trimmed to start at the found position (cursor advances)."""
+        path = np.array([[0, 0], [0, 1], [0, 2], [0, 3]])
+        agent.predicted_paths[5] = path
+        agent.is_agent_on_predicted_path(5, np.array([0, 2]))
+        remaining = agent.predicted_paths[5]
+        assert len(remaining) == 2
+        assert np.array_equal(remaining[0], np.array([0, 2]))
+
+    def test_already_at_path_start_returns_true(self, agent):
+        """Returns True and keeps full path when position matches the first step."""
+        path = np.array([[1, 1], [1, 2], [1, 3]])
+        agent.predicted_paths[5] = path
+        result = agent.is_agent_on_predicted_path(5, np.array([1, 1]))
+        assert result is True
+        assert len(agent.predicted_paths[5]) == 3
+
+
+# ── select_fruit_by_expected_reward ──────────────────────────────────
+
+class TestSelectFruitByExpectedReward:
+    """Tests for select_fruit_by_expected_reward — combinatorial expected reward selection."""
+
+    @pytest.fixture
+    def agent_with_known(self, simple_grid):
+        """Agent with one known other agent, suitable for reward tests."""
+        ag = Agent(id=0, position=np.array([0, 0]), level=2)
+        ag.path_finding_grid = simple_grid
+        ag.known_agents = [{"id": 1, "level": 2, "position": np.array([4, 4])}]
+        return ag
+
+    def _make_fruit(self, position, level, num_slots=4):
+        slots = [
+            np.array([position[0], position[1] + 1]),
+            np.array([position[0], position[1] - 1]),
+            np.array([position[0] + 1, position[1]]),
+            np.array([position[0] - 1, position[1]]),
+        ]
+        return Fruit(position=np.array(position), level=level, free_slots=slots[:num_slots])
+
+    def test_solo_loadable_fruit_preferred_by_reward(self, agent_with_known):
+        """Higher level×level product is preferred among solo-loadable fruits."""
+        ag = agent_with_known
+        ag.round_counter = 1
+        fruit_low = self._make_fruit([1, 1], level=1)
+        fruit_high = self._make_fruit([3, 3], level=2)
+        result = ag.select_fruit_by_expected_reward([fruit_low, fruit_high])
+        assert result is fruit_high  # 2×2=4 > 2×1=2
+
+    def test_returns_none_for_empty_list(self, agent_with_known):
+        """Returns None when no fruits are provided."""
+        result = agent_with_known.select_fruit_by_expected_reward([])
+        assert result is None
+
+    def test_coop_fruit_with_likely_helper_selected(self, agent_with_known):
+        """A cooperative fruit is selected when a helper has high predicted probability."""
+        ag = agent_with_known
+        ag.round_counter = 1
+        fruit_coop = self._make_fruit([2, 2], level=3)  # needs level 3, self is 2
+        ag.predictions = [{
+            "round": 1,
+            "agent_id": 1,
+            "trainings_data": np.zeros((1, 5)),
+            "prediction": 0.95,
+            "ground_truth": None,
+            "fruit_pos": fruit_coop.position.copy(),
+        }]
+        result = ag.select_fruit_by_expected_reward([fruit_coop])
+        assert result is fruit_coop
+
+    def test_solo_chosen_over_coop_with_unlikely_helper(self, agent_with_known):
+        """A solo-loadable fruit is preferred over a cooperative fruit with an unlikely helper."""
+        ag = agent_with_known
+        ag.round_counter = 1
+        fruit_solo = self._make_fruit([1, 1], level=1)     # self.level=2 >= 1
+        fruit_coop = self._make_fruit([2, 2], level=4)     # needs level 4, self is 2 + helper 2
+        ag.predictions = [{
+            "round": 1,
+            "agent_id": 1,
+            "trainings_data": np.zeros((1, 5)),
+            "prediction": 0.05,  # helper very unlikely to show up
+            "ground_truth": None,
+            "fruit_pos": fruit_coop.position.copy(),
+        }]
+        result = ag.select_fruit_by_expected_reward([fruit_solo, fruit_coop])
+        assert result is fruit_solo
+
+
+# ── _compute_threshold ────────────────────────────────────────────────
+
+class TestComputeThreshold:
+    """Tests for _compute_threshold — dynamic Q1-based threshold."""
+
+    def test_empty_predictions_returns_random_baseline(self, agent):
+        """With no predictions, threshold equals 1/num_fruits."""
+        assert agent._compute_threshold([], 4) == pytest.approx(0.25)
+
+    def test_threshold_at_least_random_baseline(self, agent):
+        """Threshold is always >= 1/num_fruits even when Q1 is very low."""
+        probs = [0.01, 0.01, 0.01, 0.01]
+        result = agent._compute_threshold(probs, 4)
+        assert result >= 0.25
+
+    def test_threshold_uses_q1_when_above_baseline(self, agent):
+        """Threshold equals Q1 when Q1 > 1/num_fruits."""
+        probs = [0.5, 0.6, 0.7, 0.8]
+        q1 = float(np.percentile(probs, 25))
+        result = agent._compute_threshold(probs, 4)
+        assert result == pytest.approx(q1)

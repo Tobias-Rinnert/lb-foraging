@@ -270,3 +270,64 @@ class TestCreatePathfindingGrid:
         agent = gym_instance.agents[0]
         grid = gym_instance.create_path_finding_grid(agent)
         assert grid.shape == gym_instance.full_info_field.shape
+
+
+# ── record_ground_truth ───────────────────────────────────────────────
+
+class TestRecordGroundTruth:
+    """Tests for record_ground_truth — labelling predictions when fruits are loaded."""
+
+    def _make_prediction(self, agent_id, fruit_pos, round_=0):
+        return {
+            "round": round_,
+            "agent_id": agent_id,
+            "trainings_data": np.zeros((1, 5)),
+            "prediction": 0.8,
+            "ground_truth": None,
+            "fruit_pos": np.array(fruit_pos),
+        }
+
+    def test_loaded_fruit_labels_adjacent_agent_as_1(self, gym_instance):
+        """When a fruit disappears, the agent adjacent to it gets label 1.0."""
+        fruit_pos = np.array([1, 3])
+        previous_fruits = [Fruit(position=fruit_pos, level=2, free_slots=[np.array([1, 4])])]
+        # Place agent 0 adjacent to the fruit
+        agent_0 = [a for a in gym_instance.agents if a.id == 0][0]
+        agent_0.position = np.array([1, 4])  # adjacent slot
+        agent_0.predictions = [self._make_prediction(agent_id=0, fruit_pos=fruit_pos.tolist())]
+
+        # Current fruits: fruit at (1,3) is gone — use empty field
+        gym_instance.fruits = []
+        gym_instance.record_ground_truth(previous_fruits)
+
+        assert agent_0.predictions[0]["ground_truth"] == 1.0
+
+    def test_loaded_fruit_labels_non_adjacent_agent_as_0(self, gym_instance):
+        """When a fruit disappears, a non-adjacent agent gets label 0.0."""
+        fruit_pos = np.array([1, 3])
+        previous_fruits = [Fruit(position=fruit_pos, level=2, free_slots=[np.array([1, 4])])]
+        agent_0 = [a for a in gym_instance.agents if a.id == 0][0]
+        agent_0.position = np.array([0, 0])  # far from fruit
+        agent_0.predictions = [self._make_prediction(agent_id=0, fruit_pos=fruit_pos.tolist())]
+
+        gym_instance.fruits = []
+        gym_instance.record_ground_truth(previous_fruits)
+
+        assert agent_0.predictions[0]["ground_truth"] == 0.0
+
+    def test_present_fruit_not_labelled(self, gym_instance):
+        """Predictions for fruits still present in the observation are not labelled."""
+        fruit_pos = np.array([1, 3])
+        previous_fruits = [Fruit(position=fruit_pos, level=2, free_slots=[np.array([1, 4])])]
+        agent_0 = [a for a in gym_instance.agents if a.id == 0][0]
+        agent_0.predictions = [self._make_prediction(agent_id=0, fruit_pos=fruit_pos.tolist())]
+
+        # Keep the same fruit in the current state
+        gym_instance.fruits = [Fruit(position=fruit_pos.copy(), level=2, free_slots=[])]
+        gym_instance.record_ground_truth(previous_fruits)
+
+        assert agent_0.predictions[0]["ground_truth"] is None
+
+    def test_empty_previous_fruits_is_noop(self, gym_instance):
+        """record_ground_truth with an empty list does nothing."""
+        gym_instance.record_ground_truth([])  # must not raise

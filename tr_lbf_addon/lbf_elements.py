@@ -53,7 +53,10 @@ class Agent():
         self.current_path: np.array = None
         self.pathfinding_alg = AStarFinder(diagonal_movement=DiagonalMovement.never) # pathfinding algorithm for the agent
         self.neural_network = None # the neural network for the agent to choose a fruit to target
-        self.predictions: list[dict] = [] # the predictions of the neural network 
+        self.predictions: list[dict] = [] # the predictions of the neural network
+        self.predicted_targets: dict[int, "Fruit"] = {}   # agent_id → predicted fruit
+        self.predicted_paths: dict[int, np.ndarray] = {}  # agent_id → predicted A* path
+        self.prediction_round: dict[int, int] = {}        # agent_id → round when predicted
 
     
     def __repr__(self):
@@ -153,66 +156,289 @@ class Agent():
 
     """Target selection"""
     
-    def choose_fruit(self):  
+    def choose_fruit(self):
+        """Choose a fruit to target using conditional re-prediction with path tracking.
+
+        Predictions persist across timesteps. Re-prediction only occurs when an agent deviates
+        from its predicted path, which drastically reduces NN calls. Own target selection uses
+        combinatorial expected reward via select_fruit_by_expected_reward().
+
+        Steps:
+            1. Validate agent can load at least one fruit.
+            2. Skip re-selection if current target is still on the map.
+            3. Build feasible fruit list (solo + cooperative).
+            4. Invalidate stale predictions for fruits no longer on the map.
+            5. For each other agent: skip NN call if still on predicted path, else re-predict.
+            6. Select own target by expected reward.
         """
-        Choose a fruit to target. The agent does a predicition for each other fruit, which players will choose it as a target.
-        Given the predicitions he will choose the one which maximizes the expected reward.
-        Where he predicts that anothe player is going to target a fruit, 
-        and get there before him and will be able to load the fruit alone,
-        the expected reward will be pred*0 + the expected rewards for teh other players probability to choose that fruit 
-        TODO: COmmunication between agents about cooperation?
-        """
-        # check that the agent has a high enough level to load any fruit
         fruit_levels = [fruit.level for fruit in self.known_fruits]
         assert self.level >= np.min(fruit_levels), f"All fruits are higher level than the agent {self.level}"
-        
-        # If the agent has no current target or the current target is no longer on the map in the fruit infos, choose a new target
+
         fruit_positions = np.array([fruit.position for fruit in self.known_fruits])
-        if self.target:
-            current_target_still_in_game = np.any(np.all(self.target.position == fruit_positions, axis=1))
-        if (self.target is None or not current_target_still_in_game):            
-            # get all possible level sums for cooperative play
-            coop_levels = self.get_possible_coop_level_sums([agent["level"] for agent in self.known_agents])
-            # get all fruits loadable by the agent alone or through cooperation and all fruits with an level <= agent level
-            feasible_fruits = [fruit for fruit in self.known_fruits if fruit.level in coop_levels or fruit.level <= self.level]
-            
-            # go through each fruit and predict for each player if the fruit is going to be chosen
-            known_agents_id = [agent["id"] for agent in self.known_agents] + [self.id]
-            for fruit in feasible_fruits:
-                training_data = self.get_training_data_per_fruit(fruit)
-                for agent_id in known_agents_id:
-                    # prepare input into shape for the neural network
-                    training_data.sort_index(inplace=True)
-                    agents_info = training_data.loc[agent_id]
-                    training_data.reset_index(inplace=True)
-                    training_data.drop(columns = "agent_id", inplace=True)
-                    # trainings data is a list of the fruit level, the agents info, the other agents level sorted after id 
-                    # and the other agents agentsdistance to the fruit sorted after id
-                    training_data = np.array([training_data["fruit_level"].iloc[0]] 
-                                             + agents_info.tolist() 
-                                             + training_data["level"].tolist() 
-                                             + training_data["distance_to_fruit"].tolist())
-                    training_data = training_data.reshape(1,len(input))
-                    # predict if the fruit is going to be chosen
-                    y_pred = self.neural_network.predict(training_data)
-                    # save the prediction 
-                    self.predictions.append({"round": self.round_counter,
-                                             "agent_id": agent_id, 
-                                             "trainings_data": training_data, 
-                                             "prediction": y_pred, 
-                                             "ground_truth": None,
-                                             "fruit_pos": fruit.position})
-                
-            # TODO !: Implement the function to choose a fruit based on teh prediction. See description of this function for details. (Expected rewards) 
-            # Then implement function to train the model whenever a fruit was loaded based on the recorded predicitions.
-            # For each of teh predicitions regarding the fruit that was loaded, do a forward pass and backward pass. 
-            # Both is done in the fit function from keras (model.fit(input, ground_truth)). So eventhough a predicition has already been made, 
-            # a new one must be made before the backwards pass, since the weights could have changed since the predicition was made          
-            
-            # line for testing purposes
-            # self.target = random.choice(feasible_fruits)
-  
-    
+        current_target_still_in_game = (
+            self.target is not None
+            and np.any(np.all(self.target.position == fruit_positions, axis=1))
+        )
+
+        if current_target_still_in_game:
+            return
+
+        coop_levels = self.get_possible_coop_level_sums([agent["level"] for agent in self.known_agents])
+        feasible_fruits = [
+            fruit for fruit in self.known_fruits
+            if fruit.level in coop_levels or fruit.level <= self.level
+        ]
+
+        # Invalidate predictions for fruits that are no longer on the map
+        for agent_id in list(self.predicted_targets.keys()):
+            predicted_fruit = self.predicted_targets[agent_id]
+            if not np.any(np.all(predicted_fruit.position == fruit_positions, axis=1)):
+                del self.predicted_targets[agent_id]
+                del self.predicted_paths[agent_id]
+                del self.prediction_round[agent_id]
+
+        # For each other agent: skip NN call if still on predicted path, else re-predict
+        for agent_info in self.known_agents:
+            agent_id = agent_info["id"]
+            agent_position = agent_info["position"]
+            if self.is_agent_on_predicted_path(agent_id, agent_position):
+                continue
+            predicted_target = self.predict_agent_target(agent_id, feasible_fruits)
+            if predicted_target is not None:
+                self.compute_predicted_path(agent_id, agent_position, predicted_target)
+
+        self.target = self.select_fruit_by_expected_reward(feasible_fruits)
+
+
+    def is_agent_on_predicted_path(self, agent_id: int, position: np.ndarray) -> bool:
+        """Check if the agent is still on its predicted path and trim the path to the current position.
+
+        Returns True if the position is found anywhere on the remaining predicted path (handles
+        collision delays by not requiring timestep-exact matching). Trims the stored path to
+        start at the found position so subsequent calls advance the cursor.
+
+        Args:
+            agent_id (int): ID of the agent to check
+            position (np.ndarray): current position of the agent
+
+        Returns:
+            bool: True if the agent is on the predicted path, False otherwise
+        """
+        if agent_id not in self.predicted_paths:
+            return False
+        path = self.predicted_paths[agent_id]
+        for i, step in enumerate(path):
+            if np.array_equal(step, position):
+                self.predicted_paths[agent_id] = path[i:]
+                return True
+        return False
+
+
+    def predict_agent_target(self, agent_id: int, feasible_fruits: list) -> "Fruit":
+        """Predict which fruit the given agent will target and return the most probable fruit.
+
+        Builds NN input per fruit without mutating the DataFrame (fixes the original mutation bug).
+        Stores all predictions in self.predictions. The NN input format matches init_neural_network:
+        [fruit_level_norm, focal_level_norm, focal_distance_norm, other_levels..., other_distances...]
+
+        Args:
+            agent_id (int): ID of the agent to predict for
+            feasible_fruits (list[Fruit]): fruits the agent could feasibly target
+
+        Returns:
+            Fruit: the fruit with the highest predicted probability
+        """
+        if self.neural_network is None:
+            return feasible_fruits[0] if feasible_fruits else None
+
+        best_fruit = None
+        best_prob = -1.0
+
+        for fruit in feasible_fruits:
+            df = self.get_training_data_per_fruit(fruit)
+            df_sorted = df.sort_index()
+            focal_row = df_sorted.loc[agent_id]
+            other_rows = df_sorted.drop(index=agent_id)
+
+            nn_input = np.array(
+                [focal_row["fruit_level"]]
+                + [focal_row["level"], focal_row["distance_to_fruit"]]
+                + other_rows["level"].tolist()
+                + other_rows["distance_to_fruit"].tolist()
+            ).reshape(1, -1)
+
+            y_pred = self.neural_network.predict(nn_input, verbose=0)
+            prob = float(y_pred[0, 0])
+
+            self.predictions.append({
+                "round": self.round_counter,
+                "agent_id": agent_id,
+                "trainings_data": nn_input,
+                "prediction": prob,
+                "ground_truth": None,
+                "fruit_pos": fruit.position.copy(),
+            })
+
+            if prob > best_prob:
+                best_prob = prob
+                best_fruit = fruit
+
+        return best_fruit
+
+
+    def compute_predicted_path(self, agent_id: int, agent_position: np.ndarray, target_fruit: "Fruit") -> np.ndarray:
+        """Compute and store the predicted A* path for the given agent to target_fruit.
+
+        Uses the calling agent's path_finding_grid as an approximation of the other agent's grid.
+        Stores the result in predicted_paths, predicted_targets, and prediction_round.
+
+        Args:
+            agent_id (int): ID of the agent being predicted
+            agent_position (np.ndarray): current position of the predicted agent
+            target_fruit (Fruit): the fruit predicted to be the agent's target
+
+        Returns:
+            np.ndarray: the predicted path as an array of positions
+        """
+        closest_slot = min(
+            target_fruit.free_slots,
+            key=lambda slot: np.linalg.norm(slot - agent_position),
+        )
+        path = self.get_path(agent_position, closest_slot)
+        self.predicted_paths[agent_id] = path
+        self.predicted_targets[agent_id] = target_fruit
+        self.prediction_round[agent_id] = self.round_counter
+        return path
+
+
+    def _get_latest_prediction_prob(self, agent_id: int, fruit: "Fruit") -> float:
+        """Return the most recent prediction probability for agent_id targeting fruit.
+
+        Scans self.predictions in reverse (most recent first) so the latest round's
+        prediction takes precedence.
+
+        Args:
+            agent_id (int): the agent whose prediction to look up
+            fruit (Fruit): the fruit to look up
+
+        Returns:
+            float: probability, or 0.0 if no prediction found
+        """
+        for prediction in reversed(self.predictions):
+            if (prediction["agent_id"] == agent_id
+                    and np.array_equal(prediction["fruit_pos"], fruit.position)):
+                return prediction["prediction"]
+        return 0.0
+
+
+    def _compute_threshold(self, current_round_predictions: list, num_feasible_fruits: int) -> float:
+        """Compute dynamic threshold as max(Q1 of current-round predictions, 1/num_fruits).
+
+        Q1 (25th percentile) filters out agents unlikely to target a fruit.
+        The 1/num_fruits floor ensures the threshold is at least as selective as random.
+
+        Args:
+            current_round_predictions (list[float]): NN probabilities from this decision cycle
+            num_feasible_fruits (int): number of fruits the agent can consider
+
+        Returns:
+            float: the threshold value
+        """
+        random_baseline = 1.0 / max(num_feasible_fruits, 1)
+        if not current_round_predictions:
+            return random_baseline
+        q1 = float(np.percentile(current_round_predictions, 25))
+        return max(q1, random_baseline)
+
+
+    def select_fruit_by_expected_reward(self, feasible_fruits: list) -> "Fruit":
+        """Select the fruit maximizing expected reward using combinatorial agent probabilities.
+
+        For solo-loadable fruits: E[R] = agent_level * fruit_level.
+        For cooperative fruits: enumerate all subsets of filtered candidate helpers and compute
+        E[R] = sum over subsets S of P(S) * R(S), where P(S) = product of probabilities.
+
+        Dynamic threshold filters low-probability helpers before subset enumeration.
+        No distance penalty — the NN already encodes distance in its predictions.
+
+        Args:
+            feasible_fruits (list[Fruit]): fruits the agent can feasibly target
+
+        Returns:
+            Fruit: the fruit with the highest expected reward, or None if list is empty
+        """
+        if not feasible_fruits:
+            return None
+
+        current_round_probs = [
+            p["prediction"]
+            for p in self.predictions
+            if p["round"] == self.round_counter and p["agent_id"] == self.id
+        ]
+        threshold = self._compute_threshold(current_round_probs, len(feasible_fruits))
+
+        best_fruit = None
+        best_expected_reward = -1.0
+
+        for fruit in feasible_fruits:
+            if self.level >= fruit.level:
+                expected_reward = float(self.level * fruit.level)
+            else:
+                candidate_helpers = []
+                for agent_info in self.known_agents:
+                    prob = self._get_latest_prediction_prob(agent_info["id"], fruit)
+                    if prob > threshold:
+                        candidate_helpers.append({
+                            "level": agent_info["level"],
+                            "prob": prob,
+                        })
+
+                max_helpers = max(len(fruit.free_slots) - 1, 0)
+                candidate_helpers.sort(key=lambda x: x["prob"], reverse=True)
+                candidate_helpers = candidate_helpers[:max_helpers]
+
+                expected_reward = 0.0
+                n = len(candidate_helpers)
+                for subset_mask in range(1 << n):
+                    subset = [candidate_helpers[i] for i in range(n) if subset_mask & (1 << i)]
+                    not_in_subset = [candidate_helpers[i] for i in range(n) if not (subset_mask & (1 << i))]
+
+                    prob_subset = (
+                        np.prod([h["prob"] for h in subset]) if subset else 1.0
+                    ) * (
+                        np.prod([1.0 - h["prob"] for h in not_in_subset]) if not_in_subset else 1.0
+                    )
+
+                    level_sum = self.level + sum(h["level"] for h in subset)
+                    reward = float(self.level * fruit.level) if level_sum >= fruit.level else 0.0
+                    expected_reward += prob_subset * reward
+
+            if expected_reward > best_expected_reward:
+                best_expected_reward = expected_reward
+                best_fruit = fruit
+
+        return best_fruit
+
+
+    def learn(self):
+        """Train the neural network on all predictions that have a ground truth label.
+
+        For each labeled prediction, calls model.fit to perform a forward + backward pass
+        (even if a prediction was made earlier, weights may have changed).
+        Removes trained predictions from self.predictions afterwards.
+        """
+        if self.neural_network is None:
+            return
+        labeled = [p for p in self.predictions if p["ground_truth"] is not None]
+        for prediction in labeled:
+            self.neural_network.fit(
+                prediction["trainings_data"],
+                np.array([[prediction["ground_truth"]]]),
+                verbose=0,
+            )
+        self.predictions = [p for p in self.predictions if p["ground_truth"] is None]
+
+
     def get_training_data_per_fruit(self, fruit):
         training_data = []
         
@@ -314,7 +540,7 @@ class Agent():
         # define the current path of the agent as a list of arrays
         path = np.array([[node.y, node.x] for node in path])
         if len(path) == 0:
-            ValueError("No path found")
+            raise ValueError("No path found")
         return path
     
     

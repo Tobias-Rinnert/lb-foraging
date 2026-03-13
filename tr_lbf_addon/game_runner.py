@@ -2,7 +2,7 @@ import sys
 import os
 
 # Ensure tr_lbf_addon/ is on sys.path for bare imports in lbf_gym.py
-_addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_addon_dir = os.path.dirname(os.path.abspath(__file__))
 if _addon_dir not in sys.path:
     sys.path.insert(0, _addon_dir)
 

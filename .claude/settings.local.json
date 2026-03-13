@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "Bash(*)",
       "Edit:C:/Users/bobis/development/lb-foraging/**",
@@ -8,7 +7,9 @@
       "Read:C:/Users/bobis/development/lb-foraging/**",
       "Read:C:/Users/bobis/.claude/plans/**",
       "Edit:C:/Users/bobis/.claude/plans/**",
-      "Write:C:/Users/bobis/.claude/plans/**"
-    ]
+      "Write:C:/Users/bobis/.claude/plans/**",
+      "mcp__Claude_Preview__preview_start"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }

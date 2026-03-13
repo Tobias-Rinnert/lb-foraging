@@ -1,8 +1,6 @@
-import time
 import numpy as np
-from dataclasses import dataclass
 
-from .lbf_elements import Agent, Fruit
+from lbf_elements import Agent, Fruit
 
 #TODO: unittests
 

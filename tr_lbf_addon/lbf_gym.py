@@ -147,24 +147,18 @@ class LBF_GYM(Agent, Fruit):
         """
         # create a grid from the full info field with ones
         path_finding_grid = np.ones_like(self.full_info_field)
-        
+
         # set any fruit as an obstacle
         for fruit in self.fruits:
             path_finding_grid[*fruit.position] = 0
-            
-        if self.agents is not None: #TODO check if this is necessary. Should be something in initialization 
-            # get all fields around the agent
-            fields_around_agent = np.array([agent.position + np.array([0, 1]),
-                                agent.position + np.array([0, -1]),
-                                agent.position + np.array([1, 0]),
-                                agent.position + np.array([-1, 0])])
-            # get all agents around the agent
-            agents_around_agent = [other_agent for other_agent in self.agents if other_agent.position.tolist() in fields_around_agent.tolist()]
-            for other_agent in agents_around_agent:
-                # if the agent around the agent is loading, set it as an obstacle
-                if other_agent.is_loading:
-                    path_finding_grid[*agent.position] = 0
-        
+
+        if self.agents is not None:
+            for other_agent in self.agents:
+                if other_agent.id == agent.id:
+                    continue
+                # mark other agents as obstacles so we path around them
+                path_finding_grid[*other_agent.position] = 0
+
         return path_finding_grid
     
     
@@ -183,7 +177,10 @@ class LBF_GYM(Agent, Fruit):
             agent.choose_fruit()
             if agent.target is None and fallback_to_closest:
                 agent.target = self._fallback_target(agent)
-            action = agent.choose_next_action()
+            if agent.target is None:
+                action = np.int64(0)  # no valid target, stay idle
+            else:
+                action = agent.choose_next_action()
             agent.last_action = action
             actions.append(action)
         return actions

@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
-from keras import models
-from keras import layers
+import torch
+import torch.nn as nn
 
 
 
@@ -84,28 +84,31 @@ class Agent():
     
     def choose_next_action(self) -> np.int64:
         """
-        Chooose between walking directions or loading a fruit.
-        
+        Choose between walking directions or loading a fruit.
+
         Returns:
-            str: the next action of the player one of 1, 2, 3, 4, 5 representing the directions and load
+            np.int64: the next action (0=none, 1-4=directions, 5=load)
         """
-        
-        # check which of the free slots of the chosen fruit is closest to the current position 
+        if not self.target.free_slots:
+            return np.int64(0)
+
+        # check which of the free slots of the chosen fruit is closest to the current position
         self.path_goal = min(self.target.free_slots, key=lambda x: np.linalg.norm(x - self.position))
-        
+
         # if the current position is the current_path_goal, the player is going to load
         if np.all(self.position == self.path_goal):
-            next_action = "load"
-            return self.action_string_to_int(next_action)
+            return self.action_string_to_int("load")
 
-        # TODO: if optimization is neccessary introduce conditions when to not update path
         self.current_path = self.get_path(self.position, self.path_goal)
-            
+
+        # no path found (blocked by other agents), stay idle
+        if self.current_path is None:
+            return np.int64(0)
+
         # get the next position in the path given the current position
         next_position = self.current_path[np.where(np.all(self.current_path == self.position, axis=1))[0][0] + 1]
-        # get the action to the next position
         pos_diff = next_position - self.position
-        direction = self.positional_difference_to_direction(pos_diff) 
+        direction = self.positional_difference_to_direction(pos_diff)
         return self.action_string_to_int(direction)
 
 
@@ -171,9 +174,6 @@ class Agent():
             5. For each other agent: skip NN call if still on predicted path, else re-predict.
             6. Select own target by expected reward.
         """
-        fruit_levels = [fruit.level for fruit in self.known_fruits]
-        assert self.level >= np.min(fruit_levels), f"All fruits are higher level than the agent {self.level}"
-
         fruit_positions = np.array([fruit.position for fruit in self.known_fruits])
         current_target_still_in_game = (
             self.target is not None
@@ -267,8 +267,10 @@ class Agent():
                 + other_rows["distance_to_fruit"].tolist()
             ).reshape(1, -1)
 
-            y_pred = self.neural_network.predict(nn_input, verbose=0)
-            prob = float(y_pred[0, 0])
+            with torch.no_grad():
+                input_tensor = torch.tensor(nn_input, dtype=torch.float32)
+                y_pred = self.neural_network(input_tensor)
+            prob = float(y_pred[0, 0].item())
 
             self.predictions.append({
                 "round": self.round_counter,
@@ -305,6 +307,8 @@ class Agent():
             key=lambda slot: np.linalg.norm(slot - agent_position),
         )
         path = self.get_path(agent_position, closest_slot)
+        if path is None:
+            return None
         self.predicted_paths[agent_id] = path
         self.predicted_targets[agent_id] = target_fruit
         self.prediction_round[agent_id] = self.round_counter
@@ -429,13 +433,16 @@ class Agent():
         """
         if self.neural_network is None:
             return
+        loss_fn = nn.MSELoss()
         labeled = [p for p in self.predictions if p["ground_truth"] is not None]
         for prediction in labeled:
-            self.neural_network.fit(
-                prediction["trainings_data"],
-                np.array([[prediction["ground_truth"]]]),
-                verbose=0,
-            )
+            input_tensor = torch.tensor(prediction["trainings_data"], dtype=torch.float32)
+            target_tensor = torch.tensor([[prediction["ground_truth"]]], dtype=torch.float32)
+            self.optimizer.zero_grad()
+            output = self.neural_network(input_tensor)
+            loss = loss_fn(output, target_tensor)
+            loss.backward()
+            self.optimizer.step()
         self.predictions = [p for p in self.predictions if p["ground_truth"] is None]
 
 
@@ -443,14 +450,16 @@ class Agent():
         training_data = []
         
         # get distance to fruit of other agents
-        for agent in self.known_agents: 
-            closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - agent["position"])) 
-            distance_to_fruit = len(self.get_path(agent["position"], closest_free_slot))
-            training_data.append({"agent_id": agent["id"], "level": agent["level"],"distance_to_fruit": distance_to_fruit})
-        
+        for agent in self.known_agents:
+            closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - agent["position"]))
+            path = self.get_path(agent["position"], closest_free_slot)
+            distance_to_fruit = len(path) if path is not None else self.path_finding_grid.shape[0] * 2
+            training_data.append({"agent_id": agent["id"], "level": agent["level"], "distance_to_fruit": distance_to_fruit})
+
         # get distance to fruit of agent self
         closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - self.position))
-        distance_to_fruit = len(self.get_path(self.position, closest_free_slot))
+        path = self.get_path(self.position, closest_free_slot)
+        distance_to_fruit = len(path) if path is not None else self.path_finding_grid.shape[0] * 2
         training_data.append({"agent_id": self.id, "level": self.level, "distance_to_fruit": distance_to_fruit})
         
         # create a dataframe from the training data and set the index to the agent id
@@ -477,24 +486,23 @@ class Agent():
     
     
     
-    def init_neural_network(self) -> models.Sequential:
+    def init_neural_network(self) -> nn.Sequential:
         """
         Initialize the neural network for the agent to choose a fruit to target.
 
         Returns:
-            models.Sequential: neural network model
+            nn.Sequential: neural network model
         """
-        # Create a Sequential model
-        model = models.Sequential()
         # input layer size = level and distance to fruit for each player in the game + the level of the fruit
-        input_layer_size = (len(self.known_agents) + 1) * 2 + 1 
-        model.add(layers.Input(shape=(input_layer_size,)))
-        # define the hidden layers
-        model.add(layers.Dense(5, activation='relu'))
-        # output layer giving the probability for a fruit being chosen
-        model.add(layers.Dense(1, activation='sigmoid'))
-        model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
+        input_layer_size = (len(self.known_agents) + 1) * 2 + 1
+        model = nn.Sequential(
+            nn.Linear(input_layer_size, 5),
+            nn.ReLU(),
+            nn.Linear(5, 1),
+            nn.Sigmoid(),
+        )
         self.neural_network = model
+        self.optimizer = torch.optim.Adam(model.parameters())
         
     
     
@@ -540,7 +548,7 @@ class Agent():
         # define the current path of the agent as a list of arrays
         path = np.array([[node.y, node.x] for node in path])
         if len(path) == 0:
-            raise ValueError("No path found")
+            return None
         return path
     
     

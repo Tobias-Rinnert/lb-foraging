@@ -29,7 +29,11 @@ tr_lbf_addon/           Main package
                         conditional re-prediction, combinatorial expected reward selection
   lbf_gym.py            Training manager — processes observations, updates agents and fruits,
                         records ground truth labels, triggers NN training when fruits are loaded
+  game_runner.py        Game loop for the web app
 lbforaging/             Vendored LBF environment (modified fork)
+web/                    React web app
+  backend/              Python WebSocket server (server.py)
+  frontend/             React + Vite frontend
 workbench.ipynb         Development notebook and experiments
 ```
 
@@ -88,6 +92,10 @@ reward = agent_level × food_level
 git clone <repo-url>
 cd lb-foraging
 pip install -e .
+
+# Install frontend dependencies
+cd web/frontend
+npm install
 ```
 
 ## Usage
@@ -104,23 +112,39 @@ observation, info = env.reset(seed=42)
 manager = Lbf_Gym(observation[0])
 ```
 
-## Game App
+## Web App
 
-A desktop GUI for running and watching the agents play. Uses `tkinter` (Python stdlib).
+A browser-based GUI for running and watching the agents play. Built with React + Vite (frontend) and a Python WebSocket server (backend).
 
+**Start the backend:**
 ```sh
-python tr_lbf_addon/app/app.py
+cd web/backend
+python server.py
 ```
+
+**Start the frontend (separate terminal):**
+```sh
+cd web/frontend
+npm run dev
+```
+
+Then open `http://localhost:5173` in your browser.
 
 **Controls:**
 - **Play / Pause** — start and stop auto-play
 - **Step** — advance one step manually (works while paused)
-- **Speed slider** — adjust step delay (20ms - 2000ms)
-- **Fit** — reset zoom and pan to show the full board
-- **Mouse wheel** — zoom in/out centred on cursor
-- **Click + drag** — pan when zoomed in
-- **Settings** — open parameter popup; click "Apply & Restart" to rebuild with new params
+- **Speed slider** — adjust step delay
+- **Settings panel** — configure environment parameters and restart
 
 ## Attribution
 
 The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` for the original license.
+
+
+
+
+## TODOs
+- add animated plot of learning rate to front end
+- make everything run smoothly. tets all parameters and check that agents actually learn
+- future steps: agents learn during the game now. maybe add generations with mutaions in the architecture of the nn to optimize hyper params
+- general goal: make sim so that different type of agents develop with different strategies: selfish vs cooperating, and tets hwich parameter combination lead to which agents

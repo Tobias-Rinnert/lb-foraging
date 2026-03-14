@@ -30,7 +30,7 @@ def default_params() -> dict:
         "normalize_reward": True,
         "observe_agent_levels": True,
         "full_info_mode": True,
-        "fallback_to_closest": True,
+        "fallback_to_closest": False,
     }
 
 

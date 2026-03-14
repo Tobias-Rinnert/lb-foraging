@@ -1,8 +1,7 @@
 numpy
 pandas
 gymnasium
-keras
-tensorflow
+torch
 pathfinding
 plotly
 networkx

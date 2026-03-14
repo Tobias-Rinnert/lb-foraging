@@ -7,12 +7,11 @@ interface Props {
   onClose: () => void;
 }
 
-const READONLY_KEYS = new Set(["penalty", "full_info_mode"]);
-
 interface FieldDef {
   label: string;
   key: keyof GameParams;
-  type: "spin" | "check" | "readonly";
+  type: "spin" | "check";
+  tooltip: string;
   min?: number;
   max?: number;
 }
@@ -21,36 +20,34 @@ const SECTIONS: { title: string; fields: FieldDef[] }[] = [
   {
     title: "Environment",
     fields: [
-      { label: "Grid size", key: "field_size", type: "spin", min: 4, max: 50 },
-      { label: "Max steps", key: "max_episode_steps", type: "spin", min: 10, max: 500 },
-      { label: "Sight", key: "sight", type: "spin", min: 0, max: 20 },
-      { label: "Force coop", key: "coop_mode", type: "check" },
+      { label: "Grid size", key: "field_size", type: "spin", min: 4, max: 50, tooltip: "Width and height of the square game grid" },
+      { label: "Max steps", key: "max_episode_steps", type: "spin", min: 10, max: 500, tooltip: "Maximum number of steps before the episode ends" },
+      { label: "Sight", key: "sight", type: "spin", min: 0, max: 20, tooltip: "How far each agent can see. 0 means full visibility" },
+      { label: "Force coop", key: "coop_mode", type: "check", tooltip: "When enabled, all food requires multiple agents to collect" },
     ],
   },
   {
     title: "Players",
     fields: [
-      { label: "Count", key: "number_players", type: "spin", min: 1, max: 15 },
-      { label: "Min level", key: "min_player_level", type: "spin", min: 1, max: 5 },
-      { label: "Max level", key: "max_player_level", type: "spin", min: 1, max: 5 },
+      { label: "Count", key: "number_players", type: "spin", min: 1, max: 15, tooltip: "Number of agents in the game" },
+      { label: "Min level", key: "min_player_level", type: "spin", min: 1, max: 5, tooltip: "Lowest possible level assigned to an agent" },
+      { label: "Max level", key: "max_player_level", type: "spin", min: 1, max: 5, tooltip: "Highest possible level assigned to an agent" },
     ],
   },
   {
     title: "Food",
     fields: [
-      { label: "Max food", key: "max_num_food", type: "spin", min: 1, max: 30 },
-      { label: "Min level", key: "min_food_level", type: "spin", min: 1, max: 5 },
-      { label: "Max level", key: "max_food_level", type: "spin", min: 1, max: 5 },
+      { label: "Max food", key: "max_num_food", type: "spin", min: 1, max: 30, tooltip: "Maximum number of food items spawned per episode" },
+      { label: "Min level", key: "min_food_level", type: "spin", min: 1, max: 5, tooltip: "Lowest possible food level. Agents need combined level >= food level to collect" },
+      { label: "Max level", key: "max_food_level", type: "spin", min: 1, max: 5, tooltip: "Highest possible food level" },
     ],
   },
   {
     title: "Advanced",
     fields: [
-      { label: "Penalty", key: "penalty", type: "readonly" },
-      { label: "Normalize reward", key: "normalize_reward", type: "check" },
-      { label: "Observe levels", key: "observe_agent_levels", type: "check" },
-      { label: "Full info mode", key: "full_info_mode", type: "readonly" },
-      { label: "Closest fallback", key: "fallback_to_closest", type: "check" },
+      { label: "Normalize reward", key: "normalize_reward", type: "check", tooltip: "Scale rewards by total food value so they sum to 1.0" },
+      { label: "Observe levels", key: "observe_agent_levels", type: "check", tooltip: "Include agent levels in the observation space" },
+      { label: "Closest fallback", key: "fallback_to_closest", type: "check", tooltip: "When no optimal fruit is found, fall back to the closest fruit instead of staying idle" },
     ],
   },
 ];
@@ -67,11 +64,7 @@ export default function SettingsPanel({ params, send, onClose }: Props) {
   };
 
   const handleApply = () => {
-    const cleaned: Record<string, unknown> = { ...local };
-    for (const key of READONLY_KEYS) {
-      delete cleaned[key];
-    }
-    send({ type: "apply_params", params: cleaned });
+    send({ type: "apply_params", params: { ...local } });
   };
 
   if (!params) return null;
@@ -87,7 +80,7 @@ export default function SettingsPanel({ params, send, onClose }: Props) {
           <fieldset key={section.title} className="settings-section">
             <legend>{section.title}</legend>
             {section.fields.map((field) => (
-              <div key={field.key} className="settings-row">
+              <div key={field.key} className="settings-row" title={field.tooltip}>
                 <label>{field.label}</label>
                 {field.type === "spin" && (
                   <input
@@ -104,9 +97,6 @@ export default function SettingsPanel({ params, send, onClose }: Props) {
                     checked={Boolean(local[field.key])}
                     onChange={(e) => setValue(field.key, e.target.checked)}
                   />
-                )}
-                {field.type === "readonly" && (
-                  <span className="readonly-value">{String(local[field.key] ?? "")}</span>
                 )}
               </div>
             ))}

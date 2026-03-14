@@ -119,3 +119,14 @@ async def ws_endpoint(websocket: WebSocket):
         stop_loop()
     except asyncio.CancelledError:
         stop_loop()
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "web.backend.server:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        reload_dirs=[_addon_dir, _backend_dir],
+    )

@@ -305,7 +305,7 @@ class TestGetDirectionFromOtherAgent:
 # ── init_neural_network ──────────────────────────────────────────────
 
 class TestInitNeuralNetwork:
-    """Tests for neural network initialization (requires keras)."""
+    """Tests for neural network initialization (requires pytorch)."""
 
     def test_neural_network_created(self, two_agents):
         """Neural network is created and stored on the agent."""
@@ -316,22 +316,26 @@ class TestInitNeuralNetwork:
 
     def test_neural_network_output_shape(self, two_agents):
         """Neural network produces a single output (probability)."""
+        import torch
         agent_a, agent_b = two_agents
         agent_a.process_agent_infos([agent_a, agent_b])
         agent_a.init_neural_network()
         # input size = (1 known_agent + 1 self) * 2 + 1 = 5
-        test_input = np.random.rand(1, 5)
-        output = agent_a.neural_network.predict(test_input, verbose=0)
+        test_input = torch.tensor(np.random.rand(1, 5), dtype=torch.float32)
+        with torch.no_grad():
+            output = agent_a.neural_network(test_input)
         assert output.shape == (1, 1)
 
     def test_neural_network_output_between_0_and_1(self, two_agents):
         """Sigmoid output is bounded between 0 and 1."""
+        import torch
         agent_a, agent_b = two_agents
         agent_a.process_agent_infos([agent_a, agent_b])
         agent_a.init_neural_network()
-        test_input = np.random.rand(1, 5)
-        output = agent_a.neural_network.predict(test_input, verbose=0)
-        assert 0.0 <= output[0, 0] <= 1.0
+        test_input = torch.tensor(np.random.rand(1, 5), dtype=torch.float32)
+        with torch.no_grad():
+            output = agent_a.neural_network(test_input)
+        assert 0.0 <= output[0, 0].item() <= 1.0
 
 
 # ── is_agent_on_predicted_path ────────────────────────────────────────

@@ -31,6 +31,12 @@ export interface GameParams {
   fallback_to_closest: boolean;
 }
 
+export interface MetricsLatest {
+  type: "metrics_latest";
+  episode_index: number;
+  values: Record<string, number>;
+}
+
 export interface GameFrame {
   field_size: number;
   step_count: number;
@@ -41,4 +47,5 @@ export interface GameFrame {
   agents: AgentState[];
   fruits: FruitState[];
   params: GameParams;
+  metrics_latest?: MetricsLatest;
 }

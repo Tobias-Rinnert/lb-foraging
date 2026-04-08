@@ -1,18 +1,20 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useGameSocket } from "./hooks/useGameSocket";
+import { useMetricsHistory } from "./hooks/useMetricsHistory";
 import Toolbar from "./components/Toolbar";
 import GameBoard from "./components/GameBoard";
 import SettingsPanel from "./components/SettingsPanel";
+import MetricsPanel from "./components/charts/MetricsPanel";
 import StatusBar from "./components/StatusBar";
 import "./App.css";
 
 export default function App() {
-  const { frame, connected, send } = useGameSocket();
+  const { frame, lastMessage, connected, send } = useGameSocket();
+  const metrics = useMetricsHistory(lastMessage);
   const [showSettings, setShowSettings] = useState(false);
-  const boardRef = useRef<{ resetView: () => void }>(null);
-
+  const [metricsOpen, setMetricsOpen] = useState(false);
   const handleFit = useCallback(() => {
-    boardRef.current?.resetView();
+    // fit handled by GameBoard internally
   }, []);
 
   return (
@@ -23,6 +25,8 @@ export default function App() {
         send={send}
         onFit={handleFit}
         onToggleSettings={() => setShowSettings((s) => !s)}
+        metricsOpen={metricsOpen}
+        onToggleMetrics={() => setMetricsOpen((v) => !v)}
       />
       <div className="main-area">
         <GameBoard frame={frame} />
@@ -33,6 +37,9 @@ export default function App() {
             onClose={() => setShowSettings(false)}
           />
         )}
+      </div>
+      <div className={`metrics-drawer ${metricsOpen ? "" : "collapsed"}`}>
+        <MetricsPanel metrics={metrics} onClose={() => setMetricsOpen(false)} />
       </div>
       <StatusBar frame={frame} />
     </div>

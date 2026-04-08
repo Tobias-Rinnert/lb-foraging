@@ -8,6 +8,7 @@ if _addon_dir not in sys.path:
 
 import gymnasium as gym
 from lbf_gym import LBF_GYM
+from metrics_tracker import MetricsTracker
 
 
 _env_counter = 0  # unique id per env registration to avoid re-registration errors
@@ -49,6 +50,8 @@ class GameRunner:
         self.step_count: int = 0
         self.rewards: list[float] = []
         self.episode_over: bool = False
+        self.metrics = MetricsTracker()
+        self._cumulative_rewards: list[float] = []
         self._build_env()
 
     # -- public API ------------------------------------------------------------
@@ -59,6 +62,7 @@ class GameRunner:
         self.lbf_gym = LBF_GYM(self.observation[0])
         self.step_count = 0
         self.rewards = [0.0] * self.params["number_players"]
+        self._cumulative_rewards = [0.0] * self.params["number_players"]
         self.episode_over = False
 
     def step(self):
@@ -74,8 +78,20 @@ class GameRunner:
         self.step_count += 1
         self.episode_over = bool(terminated or truncated)
 
+        # Accumulate rewards for episode-level return metrics
+        for i, r in enumerate(self.rewards):
+            self._cumulative_rewards[i] += r
+
+        # Record per-agent NN losses for this step
+        self.metrics.record_step_losses(self.lbf_gym.last_step_losses_per_agent)
+
+        # Finalise the episode metrics when the episode ends
+        if self.episode_over:
+            self.metrics.record_episode_end(self._cumulative_rewards)
+
     def rebuild(self, new_params: dict):
         """Close the current env, register a new one with new_params, and reset."""
+        self.metrics.clear()
         if self.env is not None:
             self.env.close()
         self.params = dict(new_params)
@@ -112,4 +128,4 @@ class GameRunner:
                 "full_info_mode": p["full_info_mode"],
             },
         )
-        self.env = gym.make(env_id)
+        self.env = gym.make(env_id, disable_env_checker=True)

@@ -1,6 +1,7 @@
 """Convert GameRunner state into JSON-serializable dicts."""
 
 import numpy as np
+from web.backend.metrics_serializer import serialize_metrics_latest
 
 # Same 10-colour palette as board_canvas.py
 _AGENT_COLOURS = [
@@ -49,7 +50,7 @@ def serialize_frame(runner, paused: bool) -> dict:
                 "free_slots": free_slots,
             })
 
-    return {
+    frame = {
         "field_size": int(runner.params["field_size"]),
         "step_count": int(runner.step_count),
         "max_steps": int(runner.params["max_episode_steps"]),
@@ -60,3 +61,7 @@ def serialize_frame(runner, paused: bool) -> dict:
         "fruits": fruits,
         "params": {k: _to_list(v) for k, v in runner.params.items()},
     }
+    metrics_latest = serialize_metrics_latest(runner.metrics)
+    if metrics_latest is not None:
+        frame["metrics_latest"] = metrics_latest
+    return frame

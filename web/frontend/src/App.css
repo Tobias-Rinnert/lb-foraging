@@ -302,3 +302,45 @@ body {
   color: var(--text-secondary);
   font-size: 12px;
 }
+
+/* Metrics drawer */
+.metrics-drawer {
+  height: 320px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  overflow: hidden;
+  transition: height 0.2s ease;
+  flex-shrink: 0;
+}
+
+.metrics-drawer.collapsed {
+  height: 0;
+}
+
+.metrics-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px 16px;
+}
+
+.metrics-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.chart-container {
+  flex: 1;
+  min-height: 0;
+}
+
+.chart-toggles {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 12px;
+  align-items: center;
+}

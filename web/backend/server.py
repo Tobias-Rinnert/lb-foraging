@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse
 
 from tr_lbf_addon.game_runner import GameRunner, default_params
 from web.backend.serializer import serialize_frame
+from web.backend.metrics_serializer import serialize_metrics_snapshot
 
 app = FastAPI()
 
@@ -47,6 +48,9 @@ async def ws_endpoint(websocket: WebSocket):
     async def send_frame():
         await websocket.send_json(serialize_frame(runner, paused))
 
+    async def send_metrics_snapshot():
+        await websocket.send_json(serialize_metrics_snapshot(runner.metrics))
+
     async def game_loop():
         nonlocal paused
         while not paused:
@@ -67,6 +71,7 @@ async def ws_endpoint(websocket: WebSocket):
 
     # Send initial state
     await send_frame()
+    await send_metrics_snapshot()
 
     try:
         while True:
@@ -97,6 +102,9 @@ async def ws_endpoint(websocket: WebSocket):
             elif msg_type == "set_speed":
                 speed_ms = max(20, min(2000, int(msg.get("speed_ms", 200))))
 
+            elif msg_type == "request_metrics_snapshot":
+                await send_metrics_snapshot()
+
             elif msg_type == "apply_params":
                 paused = True
                 stop_loop()
@@ -113,6 +121,8 @@ async def ws_endpoint(websocket: WebSocket):
                         new_params[k] = int(new_params[k])
                 merged = {**default_params(), **new_params}
                 await asyncio.to_thread(runner.rebuild, merged)
+                await websocket.send_json({"type": "metrics_cleared"})
+                await send_metrics_snapshot()
                 await send_frame()
 
     except WebSocketDisconnect:

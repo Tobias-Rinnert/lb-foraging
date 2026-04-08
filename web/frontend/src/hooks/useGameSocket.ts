@@ -3,6 +3,7 @@ import type { GameFrame } from "../types/game";
 
 export function useGameSocket() {
   const [frame, setFrame] = useState<GameFrame | null>(null);
+  const [lastMessage, setLastMessage] = useState<unknown>(null);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<number | null>(null);
@@ -17,8 +18,12 @@ export function useGameSocket() {
     };
 
     ws.onmessage = (event) => {
-      const data: GameFrame = JSON.parse(event.data);
-      setFrame(data);
+      const data = JSON.parse(event.data) as Record<string, unknown>;
+      setLastMessage(data);
+      // Only update frame for game-frame messages (they have field_size)
+      if ("field_size" in data) {
+        setFrame(data as unknown as GameFrame);
+      }
     };
 
     ws.onclose = () => {
@@ -49,5 +54,5 @@ export function useGameSocket() {
     }
   }, []);
 
-  return { frame, connected, send };
+  return { frame, lastMessage, connected, send };
 }

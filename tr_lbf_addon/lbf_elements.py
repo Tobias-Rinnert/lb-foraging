@@ -424,17 +424,21 @@ class Agent():
         return best_fruit
 
 
-    def learn(self):
+    def learn(self) -> list[float]:
         """Train the neural network on all predictions that have a ground truth label.
 
         For each labeled prediction, calls model.fit to perform a forward + backward pass
         (even if a prediction was made earlier, weights may have changed).
         Removes trained predictions from self.predictions afterwards.
+
+        Returns:
+            list[float]: MSE loss value for each trained prediction, or empty list if no NN.
         """
         if self.neural_network is None:
-            return
+            return []
         loss_fn = nn.MSELoss()
         labeled = [p for p in self.predictions if p["ground_truth"] is not None]
+        losses: list[float] = []
         for prediction in labeled:
             input_tensor = torch.tensor(prediction["trainings_data"], dtype=torch.float32)
             target_tensor = torch.tensor([[prediction["ground_truth"]]], dtype=torch.float32)
@@ -443,7 +447,9 @@ class Agent():
             loss = loss_fn(output, target_tensor)
             loss.backward()
             self.optimizer.step()
+            losses.append(float(loss.detach().item()))
         self.predictions = [p for p in self.predictions if p["ground_truth"] is None]
+        return losses
 
 
     def get_training_data_per_fruit(self, fruit):

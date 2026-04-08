@@ -7,9 +7,11 @@ interface Props {
   send: (msg: Record<string, unknown>) => void;
   onFit: () => void;
   onToggleSettings: () => void;
+  metricsOpen: boolean;
+  onToggleMetrics: () => void;
 }
 
-export default function Toolbar({ frame, connected, send, onFit, onToggleSettings }: Props) {
+export default function Toolbar({ frame, connected, send, onFit, onToggleSettings, metricsOpen, onToggleMetrics }: Props) {
   const [speed, setSpeed] = useState(200);
 
   const handleSpeedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,6 +75,9 @@ export default function Toolbar({ frame, connected, send, onFit, onToggleSetting
 
       <div className="toolbar-group">
         <span className={`connection-dot ${connected ? "connected" : "disconnected"}`} />
+        <button onClick={onToggleMetrics} style={{ fontWeight: metricsOpen ? 600 : undefined }}>
+          Metrics
+        </button>
         <button onClick={onToggleSettings}>Settings</button>
       </div>
     </div>

@@ -17,6 +17,8 @@ class LBF_GYM(Agent, Fruit):
     def __init__(self, observation: dict):
         # initialize teh variable agents
         self.agents = None
+        # losses captured from last update_agents call; keyed by agent id
+        self.last_step_losses_per_agent: dict[int, list[float]] = {}
         # get the full info field
         self.get_full_info_field(observation)
         # get the posiitions and level of the fruit
@@ -132,7 +134,7 @@ class LBF_GYM(Agent, Fruit):
             agent.position_history.append(new_position)
             # update the level
             agent.level = new_player_info["level"]
-            agent.learn()
+            self.last_step_losses_per_agent[agent.id] = agent.learn()
 
             
             

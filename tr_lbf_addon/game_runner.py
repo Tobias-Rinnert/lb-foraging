@@ -14,7 +14,7 @@ _env_counter = 0  # unique id per env registration to avoid re-registration erro
 
 
 def default_params() -> dict:
-    """Return the default game parameters matching run_the_game.py."""
+    """Return the default game parameters for a standard episode."""
     return {
         "field_size": 8,
         "number_players": 5,

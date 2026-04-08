@@ -12,30 +12,37 @@ Key goals:
 - Use the simplest and most efficient models — automate walking so the neural network can focus on estimating the actual stochastic process
 - Investigate whether Q-values are still necessary in this setup — it might suffice to estimate which fruit is going to be loaded by which player, without explicitly modelling time
 
-## Changes to LBF
+## Repository Layout
 
-The `lbforaging/` directory contains a slightly modified fork of the original LBF environment:
-- Added agent IDs for tracking
-- Added `full_info_mode` to get all information from the observation conveniently
-- Changed collision logic: when two agents want the same cell, one fails randomly while the other succeeds
+This repo contains **three distinct pieces**. Everything I wrote lives in `tr_lbf_addon/` and `web/`. The `lbforaging/` folder is a vendored copy of the upstream environment and should be treated as a third-party dependency.
 
-The original LBF documentation, license, and tests are in `lbforaging/`.
-
-## Project Structure
+- **`tr_lbf_addon/`** — my Python package. Agent/fruit logic, A* pathfinding, neural network, training manager, and the game loop consumed by the web backend.
+- **`web/`** — my browser-based GUI for running and watching the agents. React + Vite frontend, Python WebSocket backend.
+- **`lbforaging/`** — vendored fork of [semitable/lb-foraging](https://github.com/semitable/lb-foraging) with a handful of tweaks (see *Changes to LBF* below). Its original docs, license, and tests live inside that folder and are otherwise untouched.
 
 ```
-tr_lbf_addon/           Main package
-  lbf_elements.py       Fruit and Agent classes — decision making, pathfinding, neural net,
+tr_lbf_addon/           My Python package
+  lbf_elements.py       Fruit and Agent classes — decision making, pathfinding, NN,
                         conditional re-prediction, combinatorial expected reward selection
   lbf_gym.py            Training manager — processes observations, updates agents and fruits,
                         records ground truth labels, triggers NN training when fruits are loaded
-  game_runner.py        Game loop for the web app
-lbforaging/             Vendored LBF environment (modified fork)
-web/                    React web app
+  game_runner.py        Game loop used by the web backend
+  tests/                Unit tests
+
+web/                    Browser GUI
   backend/              Python WebSocket server (server.py)
   frontend/             React + Vite frontend
-workbench.ipynb         Development notebook and experiments
+
+lbforaging/             Vendored upstream LBF environment (modified fork)
+start.bat               One-click launcher for the web app (Windows)
 ```
+
+## Changes to LBF
+
+The `lbforaging/` directory is a slightly modified fork of the original environment:
+- Added agent IDs for tracking
+- Added `full_info_mode` to get all information from the observation conveniently
+- Changed collision logic: when two agents want the same cell, one fails randomly while the other succeeds
 
 ## Mathematical Functions
 
@@ -98,37 +105,26 @@ cd web/frontend
 npm install
 ```
 
-## Usage
+## Running the Web App
 
-create an LBF environment, initializes the `Lbf_Gym` manager, and runs episodes with agent decision making.
+The web app is the main way to interact with the agents — it runs the `tr_lbf_addon` game loop through a WebSocket backend and renders the board in the browser.
 
-```python
-import lbforaging
-import gymnasium as gym
-from tr_lbf_addon.lbf_gym import Lbf_Gym
-
-env = gym.make("Foraging-8x8-2p-1f-v3")
-observation, info = env.reset(seed=42)
-manager = Lbf_Gym(observation[0])
+**Windows one-click:**
 ```
-
-## Web App
-
-A browser-based GUI for running and watching the agents play. Built with React + Vite (frontend) and a Python WebSocket server (backend).
-
-**Start the backend:**
-```sh
-cd web/backend
-python server.py
+start.bat
 ```
+This launches the backend with auto-reload, the Vite dev server, and opens the browser at `http://localhost:5173`.
 
-**Start the frontend (separate terminal):**
+**Manual (any OS):**
 ```sh
+# Terminal 1 — backend
+python -m uvicorn web.backend.server:app --reload --port 8000
+
+# Terminal 2 — frontend
 cd web/frontend
 npm run dev
 ```
-
-Then open `http://localhost:5173` in your browser.
+Then open `http://localhost:5173`.
 
 **Controls:**
 - **Play / Pause** — start and stop auto-play
@@ -140,13 +136,8 @@ Then open `http://localhost:5173` in your browser.
 
 The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` for the original license.
 
-
-
-
 ## TODOs
-- run_the_game.py necessary? We have a app now
-- work oveer readme. Should made clear that my code is now in tr_lbf_addon and in web. lbforaging is the standard lbforaging repo
 - add animated plot of learning rate to front end
-- make everything run smoothly. tets all parameters and check that agents actually learn
-- future steps: agents learn during the game now. add generations with mutaions in the architecture of the nn to optimize hyper params
-- general goal: make sim so that different type of agents develop with different strategies: selfish vs cooperating, and tets hwich parameter combination lead to which agents
+- make everything run smoothly. test all parameters and check that agents actually learn
+- future steps: agents learn during the game now. add generations with mutations in the architecture of the nn to optimize hyper params
+- general goal: make sim so that different types of agents develop with different strategies: selfish vs cooperating, and test which parameter combinations lead to which agents

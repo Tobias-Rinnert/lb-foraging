@@ -100,7 +100,7 @@ npm install
 
 ## Usage
 
-See `workbench.ipynb` for the current development workflow. The notebook creates an LBF environment, initializes the `Lbf_Gym` manager, and runs episodes with agent decision making.
+create an LBF environment, initializes the `Lbf_Gym` manager, and runs episodes with agent decision making.
 
 ```python
 import lbforaging
@@ -144,7 +144,9 @@ The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` f
 
 
 ## TODOs
+- run_the_game.py necessary? We have a app now
+- work oveer readme. Should made clear that my code is now in tr_lbf_addon and in web. lbforaging is the standard lbforaging repo
 - add animated plot of learning rate to front end
 - make everything run smoothly. tets all parameters and check that agents actually learn
-- future steps: agents learn during the game now. maybe add generations with mutaions in the architecture of the nn to optimize hyper params
+- future steps: agents learn during the game now. add generations with mutaions in the architecture of the nn to optimize hyper params
 - general goal: make sim so that different type of agents develop with different strategies: selfish vs cooperating, and tets hwich parameter combination lead to which agents

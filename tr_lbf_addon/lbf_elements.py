@@ -472,20 +472,29 @@ class Agent():
         training_data = pd.DataFrame(training_data)
         training_data.set_index("agent_id", inplace=True)
 
-        # normalize the levels with min max scaling
+        # normalize the levels with min max scaling (0 when all equal)
         max_level = training_data["level"].max()
         min_level = training_data["level"].min()
-        training_data["level"] = (training_data["level"] - min_level) / (max_level - min_level)
+        training_data["level"] = (
+            (training_data["level"] - min_level) / (max_level - min_level)
+            if max_level != min_level else 0.0
+        )
 
-        # normalize the distance to the fruit with min max scaling
+        # normalize the distance to the fruit with min max scaling (0 when all equal)
         max_distance = training_data["distance_to_fruit"].max()
         min_distance = training_data["distance_to_fruit"].min()
-        training_data["distance_to_fruit"] = (training_data["distance_to_fruit"] - min_distance) / (max_distance - min_distance)
+        training_data["distance_to_fruit"] = (
+            (training_data["distance_to_fruit"] - min_distance) / (max_distance - min_distance)
+            if max_distance != min_distance else 0.0
+        )
 
-        # normalize the fruit level with min max scaling
-        min_fruit_level = min([fruit.level for fruit in self.known_fruits])
-        max_fruit_level = max([fruit.level for fruit in self.known_fruits])
-        fruit_level = (fruit.level - min_fruit_level) / (max_fruit_level - min_fruit_level)
+        # normalize the fruit level with min max scaling (0 when all equal)
+        min_fruit_level = min(fruit.level for fruit in self.known_fruits)
+        max_fruit_level = max(fruit.level for fruit in self.known_fruits)
+        fruit_level = (
+            (fruit.level - min_fruit_level) / (max_fruit_level - min_fruit_level)
+            if max_fruit_level != min_fruit_level else 0.0
+        )
         training_data["fruit_level"] = fruit_level
                 
         return training_data

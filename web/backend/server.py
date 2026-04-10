@@ -52,15 +52,12 @@ async def ws_endpoint(websocket: WebSocket):
         await websocket.send_json(serialize_metrics_snapshot(runner.metrics))
 
     async def game_loop():
-        nonlocal paused
         while not paused:
             await asyncio.to_thread(runner.step)
             await send_frame()
             if runner.episode_over:
                 runner.reset()
-                paused = True
                 await send_frame()
-                return
             await asyncio.sleep(speed_ms / 1000)
 
     def stop_loop():

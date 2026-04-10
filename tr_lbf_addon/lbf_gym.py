@@ -128,6 +128,8 @@ class LBF_GYM(Agent, Fruit):
             # TODO if information asymmetries are allowed, this should be changed here
             agent.known_fruits = self.fruits
             agent.process_agent_infos(self.agents)
+            if agent.neural_network is None:
+                agent.init_neural_network()
             # update the position and write it into the position history
             new_position = np.array(new_player_info["position"])
             agent.position = new_position

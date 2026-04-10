@@ -160,8 +160,9 @@ class LBF_GYM(Agent, Fruit):
             for other_agent in self.agents:
                 if other_agent.id == agent.id:
                     continue
-                # mark other agents as obstacles so we path around them
-                path_finding_grid[*other_agent.position] = 0
+                # only loading agents are true obstacles; moving agents step aside naturally
+                if other_agent.is_loading:
+                    path_finding_grid[*other_agent.position] = 0
 
         return path_finding_grid
     

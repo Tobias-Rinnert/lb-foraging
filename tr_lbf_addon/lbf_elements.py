@@ -90,6 +90,7 @@ class Agent():
             np.int64: the next action (0=none, 1-4=directions, 5=load)
         """
         if not self.target.free_slots:
+            self.target = None  # force re-selection next step
             return np.int64(0)
 
         # check which of the free slots of the chosen fruit is closest to the current position
@@ -101,8 +102,9 @@ class Agent():
 
         self.current_path = self.get_path(self.position, self.path_goal)
 
-        # no path found (blocked by other agents), stay idle
+        # no path found, force re-selection next step rather than idling permanently
         if self.current_path is None:
+            self.target = None
             return np.int64(0)
 
         # get the next position in the path given the current position

@@ -17,16 +17,16 @@ _env_counter = 0  # unique id per env registration to avoid re-registration erro
 def default_params() -> dict:
     """Return the default game parameters for a standard episode."""
     return {
-        "field_size": 8,
+        "field_size": 20,
         "number_players": 5,
         "max_num_food": 8,
         "coop_mode": False,
-        "max_episode_steps": 50,
-        "sight": 0,
+        "max_episode_steps": 1000,
+        "sight": 10,
         "min_player_level": 1,
-        "max_player_level": 1,
+        "max_player_level": 5,
         "min_food_level": 1,
-        "max_food_level": 1,
+        "max_food_level": 5,
         "penalty": 0.0,
         "normalize_reward": True,
         "observe_agent_levels": True,

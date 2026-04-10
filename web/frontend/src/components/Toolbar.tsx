@@ -23,16 +23,22 @@ export default function Toolbar({ frame, connected, send, onFit, onToggleSetting
   return (
     <div className="toolbar">
       <div className="toolbar-group">
-        <button onClick={() => send({ type: "play" })} disabled={!connected} title="Play">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <polygon points="3,1 13,8 3,15" />
-          </svg>
-        </button>
-        <button onClick={() => send({ type: "pause" })} disabled={!connected} title="Pause">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="3" y="1" width="3.5" height="14" />
-            <rect x="9.5" y="1" width="3.5" height="14" />
-          </svg>
+        <button
+          onClick={() => send({ type: frame?.paused === false ? "pause" : "play" })}
+          disabled={!connected}
+          title={frame?.paused === false ? "Pause" : "Play"}
+          className={`play-pause-btn ${frame?.paused === false ? "playing" : "paused"}`}
+        >
+          {frame?.paused === false ? (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <rect x="3" y="1" width="3.5" height="14" />
+              <rect x="9.5" y="1" width="3.5" height="14" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <polygon points="3,1 13,8 3,15" />
+            </svg>
+          )}
         </button>
         <button onClick={() => send({ type: "step" })} disabled={!connected} title="Step">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">

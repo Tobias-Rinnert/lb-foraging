@@ -93,8 +93,15 @@ class Agent():
             self.target = None  # force re-selection next step
             return np.int64(0)
 
-        # check which of the free slots of the chosen fruit is closest to the current position
-        self.path_goal = min(self.target.free_slots, key=lambda x: np.linalg.norm(x - self.position))
+        # Exclude slots already occupied by other agents so agents spread out
+        other_positions = {tuple(a["position"]) for a in (self.known_agents or [])}
+        available_slots = [s for s in self.target.free_slots if tuple(s) not in other_positions]
+        if not available_slots:
+            self.target = None  # all slots taken, try a different fruit next step
+            return np.int64(0)
+
+        # pick the closest unoccupied slot
+        self.path_goal = min(available_slots, key=lambda x: np.linalg.norm(x - self.position))
 
         # if the current position is the current_path_goal, the player is going to load
         if np.all(self.position == self.path_goal):

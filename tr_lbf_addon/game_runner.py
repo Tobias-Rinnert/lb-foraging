@@ -21,7 +21,7 @@ def default_params() -> dict:
         "number_players": 5,
         "max_num_food": 8,
         "coop_mode": False,
-        "max_episode_steps": 1000,
+        "max_episode_steps": 500,
         "sight": 10,
         "min_player_level": 1,
         "max_player_level": 5,

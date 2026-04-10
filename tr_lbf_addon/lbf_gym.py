@@ -27,7 +27,13 @@ class LBF_GYM(Agent, Fruit):
         self.initialize_agents(observation["player_infos"])
         
     
-    def update_observation(self, observation: dict):
+    def update_observation(
+        self,
+        observation: dict,
+        food_growth: dict | None = None,
+        dead_agents: set | None = None,
+        ca_map=None,
+    ):
         """Update the observation and record ground truth labels for loaded fruits.
 
         Saves previous fruits before refreshing so that disappeared fruits can be identified
@@ -35,12 +41,16 @@ class LBF_GYM(Agent, Fruit):
 
         Args:
             observation (dict): new observation from the environment
+            food_growth (dict | None): mapping of (row, col) tuple → growth [0,1].
+                When provided, only fruits with growth >= 1.0 are visible to agents.
+            dead_agents (set | None): set of agent ids that have died this episode
+            ca_map (np.ndarray | None): CA terrain map for pathfinding and stone obstacles
         """
         previous_fruits = list(self.fruits) if self.fruits else []
         self.get_full_info_field(observation)
-        self.get_fruit_infos()
+        self.get_fruit_infos(food_growth=food_growth)
         self.record_ground_truth(previous_fruits)
-        self.update_agents(observation["player_infos"])
+        self.update_agents(observation["player_infos"], dead_agents=dead_agents, ca_map=ca_map)
     
     
     def get_full_info_field(self, observation: dict) -> np.array:
@@ -61,71 +71,93 @@ class LBF_GYM(Agent, Fruit):
         self.full_info_field =  field
     
     
-    def get_fruit_infos(self) -> list[Fruit]:
-        """get the position and level of the fruits in the get_full_info_field
+    def get_fruit_infos(self, food_growth: dict | None = None) -> list[Fruit]:
+        """get the position and level of the fruits in the get_full_info_field.
+
+        When food_growth is provided, only fruits whose growth value >= 1.0 are visible
+        to agents (unripe / stone-cell fruits are filtered out).
+
+        Args:
+            food_growth (dict | None): mapping of (row, col) tuple → growth [0,1]
 
         Returns:
-            dict: dictionary with the position and level of the fruits
+            list[Fruit]: list of ripe, visible fruits
         """
         fruit_posisitions = np.where(self.full_info_field > 0)
         fruit_posisitions = list(zip(fruit_posisitions[0], fruit_posisitions[1]))
         fruit_posisitions = [np.array(pos) for pos in fruit_posisitions]
         fruits = []
         for fruit_pos in fruit_posisitions:
-            # get teh four fields around the fruit
-            load_slots = [fruit_pos + np.array([0, 1]), 
-                              fruit_pos + np.array([0, -1]), 
-                              fruit_pos + np.array([1, 0]), 
+            # filter unripe / stone-cell fruits when growth tracking is active
+            if food_growth is not None:
+                growth = food_growth.get(tuple(fruit_pos), 0.0)
+                if growth < 1.0:
+                    continue
+
+            # get the four fields around the fruit
+            load_slots = [fruit_pos + np.array([0, 1]),
+                              fruit_pos + np.array([0, -1]),
+                              fruit_pos + np.array([1, 0]),
                               fruit_pos + np.array([-1, 0])]
             # get the free slots around the fruit
             free_slots = [slot for slot in load_slots if self.full_info_field[tuple(slot)] == 0]
             # create the fruit
-            fruit = Fruit(position=fruit_pos, 
-                          level=self.full_info_field[*fruit_pos], 
+            fruit = Fruit(position=fruit_pos,
+                          level=self.full_info_field[*fruit_pos],
                           free_slots=free_slots)
-            
+
             fruits.append(fruit)
-        self.fruits =  fruits
+        self.fruits = fruits
     
     
-    def initialize_agents(self, agent_infos: dict) -> list[Agent]:
+    def initialize_agents(self, agent_infos: dict, ca_map=None) -> list[Agent]:
         """Initialize the position and level of the player and add the current target
 
         Args:
             agent_infos (dict): player infos from the observatio from lbf if full_info_mode is True
+            ca_map (np.ndarray | None): CA terrain map for pathfinding grid
 
         Returns:
             list[Agent]: list of class Agent with the position, level and current target of the players
         """
         agents = []
         for agent in agent_infos:
-            # create the agent            
+            # create the agent
             agent = Agent(id=agent["id"],
-                          position=np.array(agent["position"]), 
+                          position=np.array(agent["position"]),
                           level=agent["level"])
             # create the path finding grid
-            agent.path_finding_grid = self.create_path_finding_grid(agent)
+            agent.path_finding_grid = self.create_path_finding_grid(agent, ca_map=ca_map)
             agents.append(agent)
         self.agents = agents
     
     
-    def update_agents(self, new_player_infos:dict):
+    def update_agents(self, new_player_infos: dict, dead_agents: set | None = None, ca_map=None):
         """Update the position and level of the player
 
         Args:
             new_player_infos (dict): new player infos from the observatio from lbf if full_info_mode is True
+            dead_agents (set | None): set of agent ids that have died (hunger >= 1). Dead
+                agents are skipped for all cognition updates.
+            ca_map (np.ndarray | None): CA terrain map for pathfinding grid
         """
+        dead_agents = dead_agents or set()
 
-        for new_player_info in new_player_infos:  
-            # get the agent with the id of the new player info          
+        for new_player_info in new_player_infos:
+            # get the agent with the id of the new player info
             id = new_player_info["id"]
             agent = [agent for agent in self.agents if agent.id == id][0]
+
+            # dead agents don't act — just update position so rendering stays correct
+            if agent.id in dead_agents:
+                agent.position = np.array(new_player_info["position"])
+                continue
+
             # increment the round counter
             agent.round_counter += 1
             # pass the new path_finding_grid to the agent
-            agent.path_finding_grid = self.create_path_finding_grid(agent)
+            agent.path_finding_grid = self.create_path_finding_grid(agent, ca_map=ca_map)
             # pass information about the fruits and agents to the agent
-            # TODO if information asymmetries are allowed, this should be changed here
             agent.known_fruits = self.fruits
             agent.process_agent_infos(self.agents)
             if agent.neural_network is None:
@@ -140,17 +172,25 @@ class LBF_GYM(Agent, Fruit):
 
             
             
-    def create_path_finding_grid(self, agent) -> np.array:
-        """Create a path finding grid where each obstacle is 0 or negative. Agents around the agent which are loading are also obstacles
+    def create_path_finding_grid(self, agent, ca_map=None) -> np.array:
+        """Create a path finding grid where each obstacle is 0 or negative.
+
+        Stone cells (ca_map==0) and agents parked at loading positions are obstacles.
 
         Args:
             agent (Agent): the agent for which the path finding grid is created
+            ca_map (np.ndarray | None): CA terrain map (0=stone, 1=grass). Stone cells
+                block movement.
 
         Returns:
             np.array: the path finding grid
         """
         # create a grid from the full info field with ones
         path_finding_grid = np.ones_like(self.full_info_field)
+
+        # mark stone cells as impassable
+        if ca_map is not None:
+            path_finding_grid[ca_map == 0] = 0
 
         # set any fruit as an obstacle
         for fruit in self.fruits:
@@ -171,18 +211,25 @@ class LBF_GYM(Agent, Fruit):
         return path_finding_grid
     
     
-    def agents_choose_actions(self, fallback_to_closest: bool = True) -> list[str]:
+    def agents_choose_actions(self, fallback_to_closest: bool = True, dead_agents: set | None = None) -> list[str]:
         """Choose the next action for each agent.
 
         Calls choose_fruit() for target selection, then optionally falls back to the closest
         reachable fruit if no target was assigned (e.g. when the NN is not yet initialised).
+        Dead agents always return action 0 (idle).
 
         Args:
             fallback_to_closest: if True, assign the closest reachable fruit when
                 choose_fruit() yields None. If False, the agent stays idle.
+            dead_agents (set | None): set of agent ids that have died this episode
         """
+        dead_agents = dead_agents or set()
         actions = []
         for agent in self.agents:
+            if agent.id in dead_agents:
+                agent.last_action = np.int64(0)
+                actions.append(np.int64(0))
+                continue
             agent.choose_fruit()
             if agent.target is None and fallback_to_closest:
                 agent.target = self._fallback_target(agent)

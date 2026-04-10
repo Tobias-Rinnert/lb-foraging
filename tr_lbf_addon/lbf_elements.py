@@ -53,6 +53,9 @@ class Agent():
         self.current_path: np.array = None
         self.pathfinding_alg = AStarFinder(diagonal_movement=DiagonalMovement.never) # pathfinding algorithm for the agent
         self.neural_network = None # the neural network for the agent to choose a fruit to target
+        self.nn_architecture: list[int] = [5]  # hidden layer sizes; evolved per episode
+        self.optimizer = None
+        self.is_alive: bool = True
         self.predictions: list[dict] = [] # the predictions of the neural network
         self.predicted_targets: dict[int, "Fruit"] = {}   # agent_id → predicted fruit
         self.predicted_paths: dict[int, np.ndarray] = {}  # agent_id → predicted A* path
@@ -89,6 +92,9 @@ class Agent():
         Returns:
             np.int64: the next action (0=none, 1-4=directions, 5=load)
         """
+        if not self.is_alive:
+            return np.int64(0)
+
         if not self.target.free_slots:
             self.target = None  # force re-selection next step
             return np.int64(0)
@@ -517,14 +523,10 @@ class Agent():
         Returns:
             nn.Sequential: neural network model
         """
+        from neuroevolution import build_nn
         # input layer size = level and distance to fruit for each player in the game + the level of the fruit
         input_layer_size = (len(self.known_agents) + 1) * 2 + 1
-        model = nn.Sequential(
-            nn.Linear(input_layer_size, 5),
-            nn.ReLU(),
-            nn.Linear(5, 1),
-            nn.Sigmoid(),
-        )
+        model = build_nn(input_layer_size, self.nn_architecture)
         self.neural_network = model
         self.optimizer = torch.optim.Adam(model.parameters())
         

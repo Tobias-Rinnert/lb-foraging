@@ -56,6 +56,7 @@ async def ws_endpoint(websocket: WebSocket):
             await asyncio.to_thread(runner.step)
             await send_frame()
             if runner.episode_over:
+                runner.evolve()
                 runner.reset()
                 await send_frame()
             await asyncio.sleep(speed_ms / 1000)
@@ -93,6 +94,7 @@ async def ws_endpoint(websocket: WebSocket):
                 await asyncio.to_thread(runner.step)
                 if runner.episode_over:
                     await send_frame()
+                    runner.evolve()
                     runner.reset()
                 await send_frame()
 

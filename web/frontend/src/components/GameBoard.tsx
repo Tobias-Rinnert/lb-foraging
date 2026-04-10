@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import type { GameFrame } from "../types/game";
 import { effectiveCellSize, detailLevel } from "../lib/viewport";
-import { drawGrid, drawFreeSlots, drawFruits, drawTargetArrows, drawAgents } from "../lib/renderer";
+import { drawGrid, drawTerrainMap, drawFreeSlots, drawFruits, drawTargetArrows, drawAgents } from "../lib/renderer";
 
 interface Props {
   frame: GameFrame | null;
@@ -52,6 +52,7 @@ export default function GameBoard({ frame }: Props) {
     const { x: panX, y: panY } = panRef.current;
 
     drawGrid(ctx, frame.field_size, cell, panX, panY);
+    drawTerrainMap(ctx, frame.ca_map ?? null, frame.food_growth ?? {}, frame.field_size, cell, panX, panY);
     drawFreeSlots(ctx, frame.fruits, cell, panX, panY, dl);
     drawFruits(ctx, frame.fruits, cell, panX, panY, imagesRef.current.apple, dl);
     drawTargetArrows(ctx, frame.agents, cell, panX, panY);

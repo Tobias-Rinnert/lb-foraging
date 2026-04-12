@@ -241,3 +241,4 @@ The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` f
 
 ## TODOs
 - evolution to fine tune neural net hyperparameters
+- predictions of agent a does not go to fruit b must also be saved and when correct must backward pass. check if this is in

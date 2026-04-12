@@ -1,3 +1,15 @@
+"""LBF agent and fruit representations, and agent cognition logic.
+
+This module implements the core game entities and agent decision-making:
+- Fruit: representation of collectible fruit on the map
+- Agent: player entity with pathfinding, neural network prediction, and learning
+- _build_row_input: builds fixed-capacity row-based NN input vectors
+
+The Agent class handles fruit selection, cooperative target prediction, path planning,
+and neural network training. It integrates with the pathfinding, NN prediction,
+and expected-reward selection systems.
+"""
+
 import numpy as np
 import pandas as pd
 import itertools
@@ -73,70 +85,111 @@ def _build_row_input(focal_pos, focal_level, others, fruit, known_fruits, grid, 
 
 @dataclass
 class Fruit:
+    """Represents a collectible fruit on the game map.
+
+    Attributes:
+        position: (row, col) location of the fruit on the grid
+        level: the fruit's level; determines solo or cooperative loadability
+        free_slots: list of adjacent (row, col) positions where agents can stand to load this fruit
     """
-    Information of the fruits in the game.
-    
-    Args:
-        position (np.array): the position of the fruit
-        level (int): the level of the fruit
-        restricted_zone (list[np.array]): the fields around the fruit
-        free_slots (list[np.array]): the free fields around the fruit
-    """
-    position: np.array
+    position: np.ndarray
+    "The (row, col) position of the fruit on the game map"
     level: int
-    free_slots: list[np.array] = None
+    "The fruit's level; higher levels require cooperative loading"
+    free_slots: list[np.ndarray] | None = None
+    "Adjacent positions where agents can stand to load this fruit"
 
 
 
-class Agent():
+class Agent:
+    """Represents a player agent with cognition, pathfinding, and neural network learning.
+
+    An Agent maintains its state (position, level), perceives the game world (known agents/fruits),
+    plans paths via A*, predicts other agents' targets using a neural network, and learns from
+    ground-truth labels. It uses combinatorial expected-reward logic to select targets.
     """
-    Class to save the information of the agent and handle its cognition.
-    """
-    
-    def __init__(self, id: int, 
-                 position: np.array, 
-                 level: int):
-        
-        self.position = position
-        self.level = level
-        self.id = id
-        
-        self.round_counter = 0 # the current round of the game
-        self.known_fruits: list[Fruit] = None # the fruits the agent knows about
-        self.known_agents: list[dict] = None # information about other agents the agent knows about
-        self.target: Fruit = None
-        self.position_history: list[np.array] = [] # the hiostory of teh positions of the agent
-        self.last_action: np.int64 = None # the last action of the agent TODO not needed right now but couold be used later
-        self.memory_size: int = 3 # the size of the memory of the agent when remembering the last positions of players from their position histories
+
+    def __init__(self, id: int,
+                 position: np.ndarray,
+                 level: int) -> None:
+        """Initialize an agent.
+
+        Args:
+            id: unique agent identifier
+            position: starting (row, col) position on the map
+            level: starting cooperation level (contribution to cooperative loads)
+        """
+
+        self.position: np.ndarray = position
+        "Current (row, col) position on the map"
+        self.level: int = level
+        "Cooperation level (contribution to cooperative loads)"
+        self.id: int = id
+        "Unique agent identifier"
+
+        self.round_counter: int = 0
+        "Current game step/round number"
+        self.known_fruits: list[Fruit] | None = None
+        "Fruits the agent is aware of (from observation)"
+        self.known_agents: list[dict] | None = None
+        "Information about other agents: {id, position, level, position_history, last_action, is_loading}"
+        self.target: Fruit | None = None
+        "Currently selected target fruit to move toward"
+        self.position_history: list[np.ndarray] = []
+        "History of past positions for movement analysis"
+        self.last_action: np.int64 | None = None
+        "Last action executed (0=none, 1-4=directions, 5=load)"
+        self.memory_size: int = 3
+        "Number of past steps to remember for direction inference"
         self.is_loading: bool = False
-        self.path_goal: np.array = None # the current slot of the fruit the agent is targeting
-        self.path_finding_grid: np.array = None
-        self.current_path: np.array = None
-        self.pathfinding_alg = AStarFinder(diagonal_movement=DiagonalMovement.never) # pathfinding algorithm for the agent
-        self.nn_architecture: list[int] = [5]  # hidden layer sizes
-        self.optimizer = None
-        self._n_rows: int = 5  # row capacity K; set by GameRunner after reset
-        self.neural_network = None # the neural network for the agent to choose a fruit to target
-        self.predictions: list[dict] = [] # the predictions of the neural network
-        self.predicted_targets: dict[int, "Fruit"] = {}   # agent_id → predicted fruit
-        self.predicted_paths: dict[int, np.ndarray] = {}  # agent_id → predicted A* path
-        self.prediction_round: dict[int, int] = {}        # agent_id → round when predicted
+        "True if agent is currently at a fruit's loading slot loading it"
+        self.path_goal: np.ndarray | None = None
+        "Target (row, col) position to reach on the map (usually fruit slot)"
+        self.path_finding_grid: np.ndarray | None = None
+        "Occupancy grid for A* pathfinding (1=walkable, 0=obstacle)"
+        self.current_path: np.ndarray | None = None
+        "Current planned path as array of (row, col) positions"
+        self.pathfinding_alg: AStarFinder = AStarFinder(diagonal_movement=DiagonalMovement.never)
+        "A* pathfinding algorithm instance"
+        self.nn_architecture: list[int] = [5]
+        "Hidden layer sizes for the neural network [h1, h2, ...]"
+        self.optimizer: torch.optim.Optimizer | None = None
+        "Adam optimizer for NN training"
+        self._n_rows: int = 5
+        "Fixed-capacity number of agent rows in the NN input vector"
+        self.neural_network: nn.Sequential | None = None
+        "Neural network model for predicting other agents' targets"
+        self.predictions: list[dict] = []
+        "Predictions made by the NN: {round, agent_id, trainings_data, prediction, ground_truth, fruit_pos}"
+        self.predicted_targets: dict[int, Fruit] = {}
+        "Mapping from agent_id to their predicted target fruit"
+        self.predicted_paths: dict[int, np.ndarray] = {}
+        "Mapping from agent_id to their predicted A* path"
+        self.prediction_round: dict[int, int] = {}
+        "Mapping from agent_id to the round when the prediction was made"
 
-    
-    def __repr__(self):
+
+    def __repr__(self) -> str:
+        """Return a human-readable representation of the agent state."""
         return f"id: {self.id}, position: {self.position}, level: {self.level}, current target: {self.target}, is loading: {self.is_loading}"
     
 
     """Information processing"""
     
-    def process_agent_infos(self, agents):
-        """What information can an agent process about another agent.
-        
+    def process_agent_infos(self, agents: list["Agent"]) -> None:
+        """Perceive and store information about other agents.
+
+        For each agent other than self, extracts id, position, level, position history,
+        last action, and loading status. Position history is trimmed to memory_size.
+
         Args:
-            agent (Agent): the agent info from the observation
+            agents: list of all Agent objects (including self)
+
+        Returns:
+            None (sets self.known_agents side effect)
         """
-        self.known_agents = [{"id": agent.id, 
-                                   "position": agent.position, 
+        self.known_agents = [{"id": agent.id,
+                                   "position": agent.position,
                                    "level": agent.level,
                                    "position_history": agent.position_history[-self.memory_size:],
                                    "last_action": agent.last_action,
@@ -185,7 +238,7 @@ class Agent():
         return self.action_string_to_int(direction)
 
 
-    def positional_difference_to_direction(self, positional_difference: str) -> np.array:
+    def positional_difference_to_direction(self, positional_difference: np.ndarray) -> str:
         """
         Translate a given positional_difference to a direction
 
@@ -232,20 +285,22 @@ class Agent():
 
     """Target selection"""
     
-    def choose_fruit(self):
-        """Choose a fruit to target using conditional re-prediction with path tracking.
+    def choose_fruit(self) -> None:
+        """Select a target fruit using conditional re-prediction and expected reward.
 
         Predictions persist across timesteps. Re-prediction only occurs when an agent deviates
         from its predicted path, which drastically reduces NN calls. Own target selection uses
         combinatorial expected reward via select_fruit_by_expected_reward().
 
         Steps:
-            1. Validate agent can load at least one fruit.
-            2. Skip re-selection if current target is still on the map.
-            3. Build feasible fruit list (solo + cooperative).
-            4. Invalidate stale predictions for fruits no longer on the map.
-            5. For each other agent: skip NN call if still on predicted path, else re-predict.
-            6. Select own target by expected reward.
+            1. Skip re-selection if current target is still on the map.
+            2. Build feasible fruit list (solo + cooperative).
+            3. Invalidate stale predictions for fruits no longer on the map.
+            4. For each other agent: skip NN call if still on predicted path, else re-predict.
+            5. Select own target by expected reward.
+
+        Returns:
+            None (sets self.target side effect)
         """
         fruit_positions = np.array([fruit.position for fruit in self.known_fruits])
         current_target_still_in_game = (
@@ -534,10 +589,14 @@ class Agent():
     
     
     
-    def init_neural_network(self) -> nn.Sequential:
+    def init_neural_network(self) -> None:
         """Initialize the neural network using the row-based fixed-capacity input.
 
         Input size = 1 + _n_rows * 2. Architecture configured by nn_architecture.
+        Sets self.neural_network and self.optimizer as side effects.
+
+        Returns:
+            None (sets self.neural_network and self.optimizer side effects)
         """
         from neuroevolution import build_nn
         input_size = 1 + self._n_rows * 2
@@ -547,13 +606,18 @@ class Agent():
         
     
     
-    def get_possible_coop_level_sums(self, other_agent_levels):
-        """
-        Get the possible level sums for cooperative play. Max four players can cooperate.
+    def get_possible_coop_level_sums(self, other_agent_levels: list[int]) -> np.ndarray:
+        """Compute all feasible level sums for solo and cooperative loading.
+
+        Given the agent's own level and the levels of other agents, enumerates all possible
+        combinations (duo, trio, squad) and returns sorted unique sums including solo level.
+        Max 4 agents can cooperate (1 + up to 3 others).
 
         Args:
-            other_agent_levels (list[int]): the levels of the other agents (not including self)
+            other_agent_levels: levels of the other agents (not including self)
 
+        Returns:
+            Sorted array of unique feasible level sums (self.level + 0/more others)
         """
         all_levels = [self.level] + other_agent_levels
 
@@ -570,14 +634,18 @@ class Agent():
     
     """Pathfinding to chosen target"""
     
-    def get_path(self, start: np.array, end: np.array) -> np.array:
-        """
-        Find the path to the target fruit. The path is saved in the current path of the agent.
+    def get_path(self, start: np.ndarray, end: np.ndarray) -> np.ndarray | None:
+        """Compute an A* path from start to end position.
+
+        Uses the instance's path_finding_grid (1=walkable, 0=obstacle) and returns
+        the path as an array of (row, col) positions including start and end.
 
         Args:
-            path_finding_grid (np.array):  array where each obstacle is 0 or negative. Agents around the agent which are loading are also obstacles
-            start (np.array): the start position of the agent
-            end (np.array): the end position of the agent
+            start: starting (row, col) position
+            end: target (row, col) position
+
+        Returns:
+            Array of (row, col) positions along the path, or None if no path exists
         """
         # define the grid
         grid = Grid(matrix=self.path_finding_grid)
@@ -613,11 +681,17 @@ class Agent():
     
     
     
-    def get_next_possible_directions(self, positional_difference) -> list[str]:
-        """Get the possible directions given the positional difference. 
+    def get_next_possible_directions(self, positional_difference: np.ndarray) -> list[str]:
+        """Infer direction(s) from a positional difference vector.
+
+        Given a (drow, dcol) difference, returns the cardinal direction(s) of movement.
+        Always returns exactly two directions (one for row, one for column).
+
+        Args:
+            positional_difference: (drow, dcol) position difference
 
         Returns:
-            list[str]: list of two possible directions e.g. ["north", "west"]
+            List of two cardinal directions, e.g. ["north", "west"]
         """
         
         possible_directions = []

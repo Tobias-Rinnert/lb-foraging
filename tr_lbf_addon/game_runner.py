@@ -1,3 +1,9 @@
+"""Game runner for LBF environment with neural network training.
+
+This module provides GameRunner for orchestrating gameplay: initializing the environment,
+resetting episodes, stepping through game loops, collecting metrics and rewards.
+"""
+
 import sys
 import os
 
@@ -15,7 +21,13 @@ _env_counter = 0  # unique id per env registration to avoid re-registration erro
 
 
 def default_params() -> dict:
-    """Return the default game parameters for a standard episode."""
+    """Return default game parameters.
+
+    Returns:
+        Dict with keys: field_size, number_players, max_num_food, coop_mode,
+        max_episode_steps, sight, min/max_player_level, min/max_food_level, penalty,
+        fallback_to_closest.
+    """
     return {
         "field_size": 20,
         "number_players": 5,
@@ -36,29 +48,53 @@ def default_params() -> dict:
 
 
 class GameRunner:
-    """Model -- owns the gym env and LBF_GYM instance.
+    """Orchestrates LBF game episodes with neural network agent learning.
+
+    Owns the gymnasium environment and LBF_GYM instance. Manages the game loop,
+    collects rewards and metrics, coordinates agent learning.
 
     Call reset() after construction or rebuild() to start a new episode.
-    Call step() each frame to advance the game by one timestep.
+    Call step() each frame to advance by one timestep.
     """
 
-    def __init__(self, params: dict):
-        self.params = dict(params)
-        self.env = None
-        self.lbf_gym = None
-        self.observation = None
+    def __init__(self, params: dict) -> None:
+        """Initialize the game runner.
+
+        Args:
+            params: game configuration dict (see default_params)
+        """
+        self.params: dict = dict(params)
+        "Copy of game configuration parameters"
+        self.env: gym.Env | None = None
+        "Gymnasium environment instance"
+        self.lbf_gym: LBF_GYM | None = None
+        "LBF game state and logic manager"
+        self.observation: tuple | None = None
+        "Current gymnasium observation tuple [player_obs, ...]"
         self.step_count: int = 0
+        "Number of steps taken in current episode"
         self.rewards: list[float] = []
+        "Rewards collected in current episode (one per agent per step)"
         self.episode_over: bool = False
-        self.metrics = MetricsTracker()
+        "True when episode has reached terminal state"
+        self.metrics: MetricsTracker = MetricsTracker()
+        "Metrics aggregator (episode returns, NN losses, etc.)"
         self._cumulative_rewards: list[float] = []
+        "Cumulative reward for each agent across episode"
         self._n_rows: int = params.get("number_players", 5)
+        "Fixed-capacity number of rows in NN input vector"
         self._build_env()
 
     # -- public API ------------------------------------------------------------
 
-    def reset(self):
-        """Reset the current env to start a new episode."""
+    def reset(self) -> None:
+        """Reset the environment to start a new episode.
+
+        Initializes LBF_GYM from gymnasium observation, sets agent._n_rows, clears metrics.
+
+        Returns:
+            None (side effects on self.observation, self.lbf_gym, step_count, rewards, etc.)
+        """
         self.observation, _ = self.env.reset(seed=None)
         self.lbf_gym = LBF_GYM(self.observation[0])
         for agent in self.lbf_gym.agents:
@@ -68,8 +104,15 @@ class GameRunner:
         self._cumulative_rewards = [0.0] * self.params["number_players"]
         self.episode_over = False
 
-    def step(self):
-        """Advance the game by one timestep. No-op if episode is over."""
+    def step(self) -> None:
+        """Advance the game by one timestep.
+
+        Updates observations, coordinates agent actions, steps gymnasium, records rewards/metrics.
+        No-op if episode is over.
+
+        Returns:
+            None (side effects on observation, rewards, step_count, episode_over, metrics)
+        """
         if self.episode_over:
             return
         self.lbf_gym.update_observation(self.observation[0])
@@ -92,7 +135,7 @@ class GameRunner:
         if self.episode_over:
             self.metrics.record_episode_end(self._cumulative_rewards)
 
-    def rebuild(self, new_params: dict):
+    def rebuild(self, new_params: dict) -> None:
         """Close the current env, register a new one with new_params, and reset."""
         self.metrics.clear()
         if self.env is not None:
@@ -104,7 +147,15 @@ class GameRunner:
 
     # -- private ---------------------------------------------------------------
 
-    def _build_env(self):
+    def _build_env(self) -> None:
+        """Register and initialize a gymnasium environment.
+
+        Creates a unique environment ID, registers it with gymnasium, and stores
+        the created environment in self.env.
+
+        Returns:
+            None (sets self.env side effect)
+        """
         global _env_counter
         _env_counter += 1
         p = self.params

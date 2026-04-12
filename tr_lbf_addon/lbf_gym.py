@@ -1,24 +1,46 @@
+"""LBF game environment management and per-step simulation.
+
+This module implements the LBF_GYM class which manages game state (agents, fruits, grid),
+updates observations from the gymnasium environment, coordinates agent actions, and
+records ground truth labels for neural network training.
+"""
+
 import numpy as np
 
 from lbf_elements import Agent, Fruit
 
-#TODO: unittests
 
-class LBF_GYM(Agent, Fruit):   
+class LBF_GYM(Agent, Fruit):
+    """Manages the LBF game state and per-step simulation.
+
+    Tracks agents, fruits, and the game grid. Provides methods to update observations,
+    construct pathfinding grids, coordinate agent actions, and record ground truth labels.
     """
-    Class to handle the observation from the lbf environment and train the agents. Inherits from Agent and Fruit classes.
-    """
-    
-    full_info_field: np.array
+
+    full_info_field: np.ndarray
+    "Full game observation array from gymnasium"
     fruits: list[Fruit]
+    "List of all fruits currently on the map"
     agents: list[Agent]
+    "List of all agents in the game"
     
-    
-    def __init__(self, observation: dict):
+
+    def __init__(self, observation: dict) -> None:
+        """Initialize the LBF game environment from a gymnasium observation.
+
+        Extracts fruits and agents from the observation and prepares internal state.
+
+        Args:
+            observation: gymnasium observation dict with keys:
+                - "field": full game grid
+                - "fruit_infos": list of fruit dicts (position, level)
+                - "player_infos": list of agent dicts (id, position, level, etc.)
+        """
         # initialize teh variable agents
-        self.agents = None
+        self.agents: list[Agent] | None = None
         # losses captured from last update_agents call; keyed by agent id
         self.last_step_losses_per_agent: dict[int, list[float]] = {}
+        "Per-agent NN training losses from the last step"
         # get the full info field
         self.get_full_info_field(observation)
         # get the posiitions and level of the fruit
@@ -43,16 +65,13 @@ class LBF_GYM(Agent, Fruit):
         self.update_agents(observation["player_infos"])
     
     
-    def get_full_info_field(self, observation: dict) -> np.array:
-        """
-        Create a field where players are represented as the negative values of their level,
-        and fruit are represented as positive values with their levels.
+    def get_full_info_field(self, observation: dict) -> None:
+        """Extract and store the full game grid from the observation.
+
+        Stores the field where players are negative (−level) and fruits are positive (level).
 
         Args:
-            observation (dict): the observatio from lbf if full_info_mode is True
-
-        Returns:
-            np.array: the field with players and fruits
+            observation: gymnasium observation dict with "field" key
         """
         field = observation["field"]
         for player in observation["player_infos"]:
@@ -61,11 +80,14 @@ class LBF_GYM(Agent, Fruit):
         self.full_info_field =  field
     
     
-    def get_fruit_infos(self) -> list[Fruit]:
-        """get the position and level of the fruits in the get_full_info_field
+    def get_fruit_infos(self) -> None:
+        """Extract fruit positions and levels from the full info field.
+
+        Identifies positive values (fruits) in the field, computes their free loading slots
+        (adjacent walkable positions), and stores as Fruit objects in self.fruits.
 
         Returns:
-            dict: dictionary with the position and level of the fruits
+            None (sets self.fruits side effect)
         """
         fruit_posisitions = np.where(self.full_info_field > 0)
         fruit_posisitions = list(zip(fruit_posisitions[0], fruit_posisitions[1]))
@@ -88,14 +110,11 @@ class LBF_GYM(Agent, Fruit):
         self.fruits =  fruits
     
     
-    def initialize_agents(self, agent_infos: dict) -> list[Agent]:
-        """Initialize the position and level of the player and add the current target
+    def initialize_agents(self, agent_infos: list[dict]) -> None:
+        """Create Agent objects from initial observation and set up pathfinding grids.
 
         Args:
-            agent_infos (dict): player infos from the observatio from lbf if full_info_mode is True
-
-        Returns:
-            list[Agent]: list of class Agent with the position, level and current target of the players
+            agent_infos: list of agent dicts with keys id, position, level
         """
         agents = []
         for agent in agent_infos:
@@ -109,11 +128,17 @@ class LBF_GYM(Agent, Fruit):
         self.agents = agents
     
     
-    def update_agents(self, new_player_infos:dict):
-        """Update the position and level of the player
+    def update_agents(self, new_player_infos: list[dict]) -> None:
+        """Update agent state, known world, and pathfinding grids.
+
+        For each agent: increments round counter, updates pathfinding grid, passes current
+        fruits/agents info. Side effect: records NN training losses in self.last_step_losses_per_agent.
 
         Args:
-            new_player_infos (dict): new player infos from the observatio from lbf if full_info_mode is True
+            new_player_infos: list of agent dicts with id, position, level, etc. from observation
+
+        Returns:
+            None (updates agents and records losses as side effect)
         """
 
         for new_player_info in new_player_infos:  
@@ -168,15 +193,19 @@ class LBF_GYM(Agent, Fruit):
         return path_finding_grid
     
     
-    def agents_choose_actions(self, fallback_to_closest: bool = True) -> list[str]:
-        """Choose the next action for each agent.
+    def agents_choose_actions(self, fallback_to_closest: bool = True) -> list[np.int64]:
+        """Coordinate target selection and action planning for all agents.
 
         Calls choose_fruit() for target selection, then optionally falls back to the closest
         reachable fruit if no target was assigned (e.g. when the NN is not yet initialised).
+        Returns the next action for each agent.
 
         Args:
             fallback_to_closest: if True, assign the closest reachable fruit when
                 choose_fruit() yields None. If False, the agent stays idle.
+
+        Returns:
+            List of actions (np.int64) for each agent: 0=none, 1-4=direction, 5=load
         """
         actions = []
         for agent in self.agents:

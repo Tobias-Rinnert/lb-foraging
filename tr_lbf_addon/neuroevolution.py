@@ -1,3 +1,9 @@
+"""Neural network architecture builders for fixed-capacity row-based inputs.
+
+Provides build_nn() to create configurable feedforward networks and add_agent_rows()
+to extend networks with new agent rows using warm-start weight copying.
+"""
+
 import copy
 import random
 import torch

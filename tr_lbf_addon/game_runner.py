@@ -52,6 +52,7 @@ class GameRunner:
         self.episode_over: bool = False
         self.metrics = MetricsTracker()
         self._cumulative_rewards: list[float] = []
+        self._n_rows: int = params.get("number_players", 5)
         self._build_env()
 
     # -- public API ------------------------------------------------------------
@@ -60,6 +61,8 @@ class GameRunner:
         """Reset the current env to start a new episode."""
         self.observation, _ = self.env.reset(seed=None)
         self.lbf_gym = LBF_GYM(self.observation[0])
+        for agent in self.lbf_gym.agents:
+            agent._n_rows = self._n_rows
         self.step_count = 0
         self.rewards = [0.0] * self.params["number_players"]
         self._cumulative_rewards = [0.0] * self.params["number_players"]
@@ -94,6 +97,7 @@ class GameRunner:
         self.metrics.clear()
         if self.env is not None:
             self.env.close()
+        self._n_rows = new_params.get("number_players", 5)
         self.params = dict(new_params)
         self._build_env()
         self.reset()

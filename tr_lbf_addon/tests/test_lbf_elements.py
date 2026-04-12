@@ -320,8 +320,8 @@ class TestInitNeuralNetwork:
         agent_a, agent_b = two_agents
         agent_a.process_agent_infos([agent_a, agent_b])
         agent_a.init_neural_network()
-        # input size = (1 known_agent + 1 self) * 2 + 1 = 5
-        test_input = torch.tensor(np.random.rand(1, 5), dtype=torch.float32)
+        input_size = 1 + agent_a._n_rows * 2
+        test_input = torch.tensor(np.random.rand(1, input_size), dtype=torch.float32)
         with torch.no_grad():
             output = agent_a.neural_network(test_input)
         assert output.shape == (1, 1)
@@ -332,7 +332,8 @@ class TestInitNeuralNetwork:
         agent_a, agent_b = two_agents
         agent_a.process_agent_infos([agent_a, agent_b])
         agent_a.init_neural_network()
-        test_input = torch.tensor(np.random.rand(1, 5), dtype=torch.float32)
+        input_size = 1 + agent_a._n_rows * 2
+        test_input = torch.tensor(np.random.rand(1, input_size), dtype=torch.float32)
         with torch.no_grad():
             output = agent_a.neural_network(test_input)
         assert 0.0 <= output[0, 0].item() <= 1.0

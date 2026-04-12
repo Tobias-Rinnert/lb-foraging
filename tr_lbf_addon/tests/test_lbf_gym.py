@@ -262,8 +262,8 @@ class TestCreatePathfindingGrid:
         # re-create grid for agent 0
         agent_0 = [a for a in gym.agents if a.id == 0][0]
         grid = gym.create_path_finding_grid(agent_0)
-        # agent 0's own position should be blocked when neighbor is loading
-        assert grid[2, 2] == 0
+        # agent 1 is loading so its position should be an obstacle
+        assert grid[2, 3] == 0
 
     def test_grid_shape_matches_field(self, gym_instance):
         """Pathfinding grid has the same shape as the full_info_field."""

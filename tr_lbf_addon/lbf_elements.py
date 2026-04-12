@@ -10,6 +10,67 @@ import torch.nn as nn
 
 
 
+def _build_row_input(focal_pos, focal_level, others, fruit, known_fruits, grid, n_rows):
+    """Build the fixed-capacity row-based NN input vector.
+
+    Layout:  [ fruit_level | focal_level | focal_dist | agent1_level | agent1_dist | ... ]
+    Total length: 1 + n_rows * 2.  Inactive rows (when pop < n_rows) are zeroed.
+
+    Args:
+        focal_pos: np.ndarray position of the agent being predicted
+        focal_level: int level of the agent being predicted
+        others: list of dicts with keys "position" and "level" (all other agents)
+        fruit: Fruit object (target to compute distance to)
+        known_fruits: list[Fruit] used for fruit-level normalisation
+        grid: np.ndarray pathfinding grid (1=walkable, 0=obstacle)
+        n_rows: int fixed row capacity K
+
+    Returns:
+        np.ndarray of shape (1 + n_rows * 2,) dtype float32
+    """
+    finder = AStarFinder(diagonal_movement=DiagonalMovement.never)
+    field_diag = float(grid.shape[0]) * 1.415
+
+    def _dist(pos, free_slots):
+        if not free_slots:
+            return field_diag * 2
+        slot = min(free_slots, key=lambda s: np.linalg.norm(s - np.array(pos)))
+        g = Grid(matrix=grid.tolist())
+        path, _ = finder.find_path(
+            g.node(int(pos[1]), int(pos[0])),
+            g.node(int(slot[1]), int(slot[0])),
+            g,
+        )
+        return float(len(path)) if path else field_diag * 2
+
+    fls = [f.level for f in known_fruits]
+    fruit_norm = (
+        (fruit.level - min(fls)) / (max(fls) - min(fls))
+        if max(fls) != min(fls) else 0.0
+    )
+
+    focal_dist_raw = _dist(focal_pos, fruit.free_slots)
+    others_dists_raw = [_dist(a["position"], fruit.free_slots) for a in others]
+
+    all_levels = [focal_level] + [a["level"] for a in others]
+    lmin, lmax = min(all_levels), max(all_levels)
+    def nlvl(lvl): return (lvl - lmin) / (lmax - lmin) if lmax != lmin else 0.0
+
+    all_dists = [focal_dist_raw] + others_dists_raw
+    dmin, dmax = min(all_dists), max(all_dists)
+    def ndist(d): return (d - dmin) / (dmax - dmin) if dmax != dmin else 0.0
+
+    vec = np.zeros(1 + n_rows * 2, dtype=np.float32)
+    vec[0] = fruit_norm
+    vec[1] = nlvl(focal_level)
+    vec[2] = ndist(focal_dist_raw)
+    others_sorted = sorted(zip(others, others_dists_raw), key=lambda x: x[0].get("id", 0))
+    for i, (agent, dist) in enumerate(others_sorted[: n_rows - 1]):
+        vec[3 + i * 2] = nlvl(agent["level"])
+        vec[3 + i * 2 + 1] = ndist(dist)
+    return vec
+
+
 @dataclass
 class Fruit:
     """
@@ -52,6 +113,9 @@ class Agent():
         self.path_finding_grid: np.array = None
         self.current_path: np.array = None
         self.pathfinding_alg = AStarFinder(diagonal_movement=DiagonalMovement.never) # pathfinding algorithm for the agent
+        self.nn_architecture: list[int] = [5]  # hidden layer sizes
+        self.optimizer = None
+        self._n_rows: int = 5  # row capacity K; set by GameRunner after reset
         self.neural_network = None # the neural network for the agent to choose a fruit to target
         self.predictions: list[dict] = [] # the predictions of the neural network
         self.predicted_targets: dict[int, "Fruit"] = {}   # agent_id → predicted fruit
@@ -246,9 +310,8 @@ class Agent():
     def predict_agent_target(self, agent_id: int, feasible_fruits: list) -> "Fruit":
         """Predict which fruit the given agent will target and return the most probable fruit.
 
-        Builds NN input per fruit without mutating the DataFrame (fixes the original mutation bug).
-        Stores all predictions in self.predictions. The NN input format matches init_neural_network:
-        [fruit_level_norm, focal_level_norm, focal_distance_norm, other_levels..., other_distances...]
+        Uses _build_row_input to assemble a fixed-capacity row-based NN input.
+        Stores all predictions in self.predictions.
 
         Args:
             agent_id (int): ID of the agent to predict for
@@ -260,27 +323,22 @@ class Agent():
         if self.neural_network is None:
             return feasible_fruits[0] if feasible_fruits else None
 
-        best_fruit = None
-        best_prob = -1.0
+        focal_info = next((a for a in (self.known_agents or []) if a["id"] == agent_id), None)
+        if focal_info is None:
+            return feasible_fruits[0] if feasible_fruits else None
 
+        others = [a for a in (self.known_agents or []) if a["id"] != agent_id]
+        others.append({"id": self.id, "position": self.position, "level": self.level})
+
+        best_fruit, best_prob = None, -1.0
         for fruit in feasible_fruits:
-            df = self.get_training_data_per_fruit(fruit)
-            df_sorted = df.sort_index()
-            focal_row = df_sorted.loc[agent_id]
-            other_rows = df_sorted.drop(index=agent_id)
-
-            nn_input = np.array(
-                [focal_row["fruit_level"]]
-                + [focal_row["level"], focal_row["distance_to_fruit"]]
-                + other_rows["level"].tolist()
-                + other_rows["distance_to_fruit"].tolist()
+            nn_input = _build_row_input(
+                np.array(focal_info["position"]), focal_info["level"],
+                others, fruit, self.known_fruits,
+                self.path_finding_grid, self._n_rows,
             ).reshape(1, -1)
-
             with torch.no_grad():
-                input_tensor = torch.tensor(nn_input, dtype=torch.float32)
-                y_pred = self.neural_network(input_tensor)
-            prob = float(y_pred[0, 0].item())
-
+                prob = float(self.neural_network(torch.tensor(nn_input, dtype=torch.float32))[0, 0])
             self.predictions.append({
                 "round": self.round_counter,
                 "agent_id": agent_id,
@@ -289,11 +347,8 @@ class Agent():
                 "ground_truth": None,
                 "fruit_pos": fruit.position.copy(),
             })
-
             if prob > best_prob:
-                best_prob = prob
-                best_fruit = fruit
-
+                best_prob, best_fruit = prob, fruit
         return best_fruit
 
 
@@ -461,70 +516,32 @@ class Agent():
         return losses
 
 
-    def get_training_data_per_fruit(self, fruit):
-        training_data = []
-        
-        # get distance to fruit of other agents
-        for agent in self.known_agents:
-            closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - agent["position"]))
-            path = self.get_path(agent["position"], closest_free_slot)
-            distance_to_fruit = len(path) if path is not None else self.path_finding_grid.shape[0] * 2
-            training_data.append({"agent_id": agent["id"], "level": agent["level"], "distance_to_fruit": distance_to_fruit})
+    def get_training_data_per_fruit(self, fruit) -> np.ndarray:
+        """Build the row-based NN input vector for self targeting fruit.
 
-        # get distance to fruit of agent self
-        closest_free_slot = min(fruit.free_slots, key=lambda x: np.linalg.norm(x - self.position))
-        path = self.get_path(self.position, closest_free_slot)
-        distance_to_fruit = len(path) if path is not None else self.path_finding_grid.shape[0] * 2
-        training_data.append({"agent_id": self.id, "level": self.level, "distance_to_fruit": distance_to_fruit})
-        
-        # create a dataframe from the training data and set the index to the agent id
-        training_data = pd.DataFrame(training_data)
-        training_data.set_index("agent_id", inplace=True)
+        Args:
+            fruit: Fruit to build input for (self is the focal agent)
 
-        # normalize the levels with min max scaling (0 when all equal)
-        max_level = training_data["level"].max()
-        min_level = training_data["level"].min()
-        training_data["level"] = (
-            (training_data["level"] - min_level) / (max_level - min_level)
-            if max_level != min_level else 0.0
+        Returns:
+            np.ndarray of shape (1 + _n_rows * 2,)
+        """
+        return _build_row_input(
+            self.position, self.level,
+            self.known_agents or [],
+            fruit, self.known_fruits,
+            self.path_finding_grid, self._n_rows,
         )
-
-        # normalize the distance to the fruit with min max scaling (0 when all equal)
-        max_distance = training_data["distance_to_fruit"].max()
-        min_distance = training_data["distance_to_fruit"].min()
-        training_data["distance_to_fruit"] = (
-            (training_data["distance_to_fruit"] - min_distance) / (max_distance - min_distance)
-            if max_distance != min_distance else 0.0
-        )
-
-        # normalize the fruit level with min max scaling (0 when all equal)
-        min_fruit_level = min(fruit.level for fruit in self.known_fruits)
-        max_fruit_level = max(fruit.level for fruit in self.known_fruits)
-        fruit_level = (
-            (fruit.level - min_fruit_level) / (max_fruit_level - min_fruit_level)
-            if max_fruit_level != min_fruit_level else 0.0
-        )
-        training_data["fruit_level"] = fruit_level
-                
-        return training_data
     
     
     
     def init_neural_network(self) -> nn.Sequential:
-        """
-        Initialize the neural network for the agent to choose a fruit to target.
+        """Initialize the neural network using the row-based fixed-capacity input.
 
-        Returns:
-            nn.Sequential: neural network model
+        Input size = 1 + _n_rows * 2. Architecture configured by nn_architecture.
         """
-        # input layer size = level and distance to fruit for each player in the game + the level of the fruit
-        input_layer_size = (len(self.known_agents) + 1) * 2 + 1
-        model = nn.Sequential(
-            nn.Linear(input_layer_size, 5),
-            nn.ReLU(),
-            nn.Linear(5, 1),
-            nn.Sigmoid(),
-        )
+        from neuroevolution import build_nn
+        input_size = 1 + self._n_rows * 2
+        model = build_nn(input_size, self.nn_architecture)
         self.neural_network = model
         self.optimizer = torch.optim.Adam(model.parameters())
         

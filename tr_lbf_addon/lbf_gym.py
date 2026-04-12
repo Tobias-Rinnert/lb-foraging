@@ -157,16 +157,13 @@ class LBF_GYM(Agent, Fruit):
             path_finding_grid[*fruit.position] = 0
 
         if self.agents is not None:
-            # Agents parked at a fruit's loading slot are obstacles — they won't move.
+            # Agents that are loading are obstacles — they won't move this step.
             # Walking agents are not marked so A* can plan through them (env handles collisions).
-            loading_positions = frozenset(
-                tuple(slot) for fruit in self.fruits for slot in (fruit.free_slots or [])
-            )
             for other_agent in self.agents:
                 if other_agent.id == agent.id:
                     continue
-                if tuple(other_agent.position) in loading_positions:
-                    path_finding_grid[*other_agent.position] = 0
+                if other_agent.is_loading:
+                    path_finding_grid[tuple(other_agent.position)] = 0
 
         return path_finding_grid
     

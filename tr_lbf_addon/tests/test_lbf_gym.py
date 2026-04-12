@@ -226,6 +226,22 @@ class TestUpdateObservation:
             assert agent.known_agents is not None
             assert all(ka["id"] != agent.id for ka in agent.known_agents)
 
+    def test_update_agents_sets_is_loading_from_last_action(self, gym_instance):
+        """Agent with last_action=5 (LOAD) gets is_loading=True after update."""
+        agent_0 = [a for a in gym_instance.agents if a.id == 0][0]
+        agent_0.last_action = np.int64(5)
+        gym_instance.update_observation(make_observation())
+        assert agent_0.is_loading is True
+
+    def test_update_agents_clears_is_loading_when_not_loading(self, gym_instance):
+        """Agent with last_action != 5 gets is_loading=False after update."""
+        agent_0 = [a for a in gym_instance.agents if a.id == 0][0]
+        agent_0.last_action = np.int64(5)   # was loading
+        gym_instance.update_observation(make_observation())
+        agent_0.last_action = np.int64(1)   # now walking
+        gym_instance.update_observation(make_observation())
+        assert agent_0.is_loading is False
+
 
 # ── create_path_finding_grid ─────────────────────────────────────────
 

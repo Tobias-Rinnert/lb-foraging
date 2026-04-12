@@ -56,10 +56,13 @@ def _build_row_input(focal_pos, focal_level, others, fruit, known_fruits, grid, 
         return float(len(path)) if path else field_diag * 2
 
     fls = [f.level for f in known_fruits]
-    fruit_norm = (
-        (fruit.level - min(fls)) / (max(fls) - min(fls))
-        if max(fls) != min(fls) else 0.0
-    )
+    if not fls:
+        fruit_norm = 0.0
+    else:
+        fruit_norm = (
+            (fruit.level - min(fls)) / (max(fls) - min(fls))
+            if max(fls) != min(fls) else 0.0
+        )
 
     focal_dist_raw = _dist(focal_pos, fruit.free_slots)
     others_dists_raw = [_dist(a["position"], fruit.free_slots) for a in others]
@@ -571,24 +574,6 @@ class Agent:
         return losses
 
 
-    def get_training_data_per_fruit(self, fruit) -> np.ndarray:
-        """Build the row-based NN input vector for self targeting fruit.
-
-        Args:
-            fruit: Fruit to build input for (self is the focal agent)
-
-        Returns:
-            np.ndarray of shape (1 + _n_rows * 2,)
-        """
-        return _build_row_input(
-            self.position, self.level,
-            self.known_agents or [],
-            fruit, self.known_fruits,
-            self.path_finding_grid, self._n_rows,
-        )
-    
-    
-    
     def init_neural_network(self) -> None:
         """Initialize the neural network using the row-based fixed-capacity input.
 

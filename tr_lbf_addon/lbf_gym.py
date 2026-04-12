@@ -147,6 +147,8 @@ class LBF_GYM(Agent, Fruit):
             agent = [agent for agent in self.agents if agent.id == id][0]
             # increment the round counter
             agent.round_counter += 1
+            # set is_loading based on last step's action (5=LOAD)
+            agent.is_loading = bool(agent.last_action == 5)
             # pass the new path_finding_grid to the agent
             agent.path_finding_grid = self.create_path_finding_grid(agent)
             # pass information about the fruits and agents to the agent

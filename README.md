@@ -8,9 +8,8 @@ This project builds on the [Level-Based Foraging (LBF)](https://github.com/semit
 
 Predictions are made once per agent and reused until that agent deviates from its predicted A* path. This conditional re-prediction strategy reduces NN calls significantly. Target selection uses combinatorial expected reward over all subsets of likely helpers.
 
-Key goals:
+Key goal:
 - Use the simplest and most efficient models — automate walking so the neural network can focus on estimating the actual stochastic process
-- Investigate whether Q-values are still necessary in this setup — it might suffice to estimate which fruit is going to be loaded by which player, without explicitly modelling time
 
 ## Repository Layout
 

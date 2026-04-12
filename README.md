@@ -8,8 +8,9 @@ This project builds on the [Level-Based Foraging (LBF)](https://github.com/semit
 
 Predictions are made once per agent and reused until that agent deviates from its predicted A* path. This conditional re-prediction strategy reduces NN calls significantly. Target selection uses combinatorial expected reward over all subsets of likely helpers.
 
-Key goal:
+Key goals:
 - Use the simplest and most efficient models — automate walking so the neural network can focus on estimating the actual stochastic process
+- make sim so that different types of agents develop with different strategies: selfish vs cooperating, and test which parameter combinations lead to which agents
 
 ## Repository Layout
 
@@ -239,7 +240,4 @@ This project is source-available with an **academic publication restriction**. Y
 The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` for the original license.
 
 ## TODOs
-- add animated plot of learning rate to front end
-- make everything run smoothly. test all parameters and check that agents actually learn
-- future steps: agents learn during the game now. add generations with mutations in the architecture of the nn to optimize hyper params
-- general goal: make sim so that different types of agents develop with different strategies: selfish vs cooperating, and test which parameter combinations lead to which agents
+- evolution to fine tune neural net hyperparameters

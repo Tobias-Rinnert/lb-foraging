@@ -231,6 +231,10 @@ Then open `http://localhost:5173`.
 - **Speed slider** — adjust step delay
 - **Settings panel** — configure environment parameters and restart
 
+## License
+
+This project is source-available with an **academic publication restriction**. You may use, modify, and distribute the code, but only Tobias Rinnert may publish academic papers or scholarly works based on it. See [LICENSE](LICENSE) for details.
+
 ## Attribution
 
 The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` for the original license.

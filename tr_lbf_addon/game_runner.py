@@ -81,8 +81,6 @@ class GameRunner:
         "Metrics aggregator (episode returns, NN losses, etc.)"
         self._cumulative_rewards: list[float] = []
         "Cumulative reward for each agent across episode"
-        self._n_rows: int = params.get("number_players", 5)
-        "Fixed-capacity number of rows in NN input vector"
         self._build_env()
 
     # -- public API ------------------------------------------------------------
@@ -98,7 +96,9 @@ class GameRunner:
         self.observation, _ = self.env.reset(seed=None)
         self.lbf_gym = LBF_GYM(self.observation[0])
         for agent in self.lbf_gym.agents:
-            agent._n_rows = self._n_rows
+            agent._max_agent_level = self.params.get("max_player_level", 5)
+            agent._max_fruit_level = self.params.get("max_food_level", 5)
+            agent._max_distance = float(self.params.get("field_size", 20) * 2)
         self.step_count = 0
         self.rewards = [0.0] * self.params["number_players"]
         self._cumulative_rewards = [0.0] * self.params["number_players"]
@@ -140,7 +140,6 @@ class GameRunner:
         self.metrics.clear()
         if self.env is not None:
             self.env.close()
-        self._n_rows = new_params.get("number_players", 5)
         self.params = dict(new_params)
         self._build_env()
         self.reset()

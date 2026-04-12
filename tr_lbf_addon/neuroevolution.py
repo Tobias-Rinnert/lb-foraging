@@ -1,73 +1,105 @@
-"""Neural network architecture builders for fixed-capacity row-based inputs.
+"""Neural network architecture for predicting agent fruit-targeting behavior.
 
-Provides build_nn() to create configurable feedforward networks and add_agent_rows()
-to extend networks with new agent rows using warm-start weight copying.
+Provides AgentPredictor, an attention-based architecture that processes variable
+numbers of agents using shared weights and attention pooling to produce
+permutation-invariant predictions while preserving n-th order beliefs.
 """
 
 import copy
-import random
+import math
 import torch
 import torch.nn as nn
 
 
-def build_nn(input_size: int, hidden_layers: list[int]) -> nn.Sequential:
-    """Build a feedforward NN with configurable hidden layers, ending in Linear(1) + Sigmoid.
+class AgentPredictor(nn.Module):
+    """Attention-based predictor for agent fruit-targeting probability.
 
-    Args:
-        input_size: number of input features
-        hidden_layers: list of hidden layer widths, e.g. [5] or [8, 4]
+    Architecture:
+        1. agent_encoder (shared phi): encodes each agent's (level, distance) into
+           a fixed-size embedding. Applied with shared weights to focal and all others.
+        2. attention: focal embedding queries other embeddings to produce a weighted
+           context vector capturing which other agents are most relevant.
+        3. decision_net (rho): takes [fruit_level, focal_level, focal_dist, context]
+           and outputs a probability in [0, 1].
 
-    Returns:
-        nn.Sequential model
+    The shared encoder ensures the network generalizes across agent slots.
+    Attention pooling makes the architecture permutation-invariant over other agents
+    while preserving n-th order belief reasoning (all agents visible in one pass).
+
+    Attributes:
+        embedding_dim: dimensionality of per-agent embeddings
+        agent_encoder: shared network encoding (level, dist) → embedding
+        attention_query: projects focal embedding into query space
+        decision_net: final network producing target probability
     """
-    layers = []
-    prev = input_size
-    for h in hidden_layers:
-        layers.append(nn.Linear(prev, h))
-        layers.append(nn.ReLU())
-        prev = h
-    layers.append(nn.Linear(prev, 1))
-    layers.append(nn.Sigmoid())
-    return nn.Sequential(*layers)
 
+    def __init__(self, embedding_dim: int = 8, decision_hidden: int = 16) -> None:
+        """Initialize the predictor.
 
-def add_agent_rows(model: nn.Sequential, n_new: int) -> nn.Sequential:
-    """Extend the first Linear layer by n_new agent rows (2 columns each).
+        Args:
+            embedding_dim: size of per-agent embeddings (default 8)
+            decision_hidden: hidden layer size in the decision network (default 16)
+        """
+        super().__init__()
+        self.embedding_dim: int = embedding_dim
+        "Dimensionality of per-agent embeddings"
 
-    New columns copy weights from a randomly chosen existing agent row
-    (columns 1..end, skipping the global fruit-level neuron at col 0).
-    This is a warm start — new rows inherit plausible initial weights.
+        self.agent_encoder: nn.Sequential = nn.Sequential(
+            nn.Linear(2, embedding_dim),
+            nn.ReLU(),
+        )
+        "Shared encoder: (level, distance) → embedding"
 
-    Args:
-        model: the existing nn.Sequential (must have a Linear first layer with
-               in_features == 1 + K*2 for some K >= 1)
-        n_new: number of new agent rows to append
+        self.attention_query: nn.Linear = nn.Linear(embedding_dim, embedding_dim)
+        "Projects focal embedding into query space for attention"
 
-    Returns:
-        a new nn.Sequential with in_features increased by 2*n_new
-    """
-    model = copy.deepcopy(model)
-    linears = [m for m in model.modules() if isinstance(m, nn.Linear)]
-    first = linears[0]
-    K_old = (first.in_features - 1) // 2
+        # decision input: fruit_level (1) + focal_level (1) + focal_dist (1) + context (embedding_dim)
+        decision_input_size = 3 + embedding_dim
+        self.decision_net: nn.Sequential = nn.Sequential(
+            nn.Linear(decision_input_size, decision_hidden),
+            nn.ReLU(),
+            nn.Linear(decision_hidden, 1),
+            nn.Sigmoid(),
+        )
+        "Final decision network: [fruit, focal, context] → probability"
 
-    with torch.no_grad():
-        extra_cols = []
-        for _ in range(n_new):
-            donor = random.randint(0, K_old - 1)
-            col = 1 + donor * 2
-            extra_cols.append(first.weight[:, col:col + 2].clone())
-        new_weight = torch.cat([first.weight] + extra_cols, dim=1)
-        new_linear = nn.Linear(first.in_features + 2 * n_new, first.out_features)
-        new_linear.weight = nn.Parameter(new_weight)
-        new_linear.bias = nn.Parameter(first.bias.clone())
+    def forward(self, fruit_level: torch.Tensor, focal_features: torch.Tensor,
+                others_features: torch.Tensor) -> torch.Tensor:
+        """Predict probability that the focal agent targets the given fruit.
 
-    new_layers = []
-    replaced = False
-    for layer in model:
-        if isinstance(layer, nn.Linear) and not replaced:
-            new_layers.append(new_linear)
-            replaced = True
+        Args:
+            fruit_level: tensor of shape (batch, 1) — normalized fruit level
+            focal_features: tensor of shape (batch, 2) — focal agent [level, distance]
+            others_features: tensor of shape (batch, n_others, 2) — other agents [level, distance]
+
+        Returns:
+            Tensor of shape (batch, 1) — probability in [0, 1]
+        """
+        # Encode focal agent
+        focal_embedding = self.agent_encoder(focal_features)       # (batch, embedding_dim)
+
+        # Encode all other agents with shared weights
+        batch_size = others_features.shape[0]
+        n_others = others_features.shape[1]
+
+        if n_others == 0:
+            # No other agents — context is zeros
+            context = torch.zeros(batch_size, self.embedding_dim,
+                                  device=focal_features.device, dtype=focal_features.dtype)
         else:
-            new_layers.append(layer)
-    return nn.Sequential(*new_layers)
+            others_embeddings = self.agent_encoder(others_features)    # (batch, n_others, embedding_dim)
+
+            # Attention: focal queries others
+            query = self.attention_query(focal_embedding)              # (batch, embedding_dim)
+            scale = math.sqrt(self.embedding_dim)
+            scores = torch.bmm(
+                others_embeddings, query.unsqueeze(2)
+            ).squeeze(2) / scale                                       # (batch, n_others)
+            weights = torch.softmax(scores, dim=1)                     # (batch, n_others)
+            context = torch.bmm(
+                weights.unsqueeze(1), others_embeddings
+            ).squeeze(1)                                               # (batch, embedding_dim)
+
+        # Decision network
+        decision_input = torch.cat([fruit_level, focal_features, context], dim=1)
+        return self.decision_net(decision_input)

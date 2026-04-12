@@ -44,16 +44,134 @@ The `lbforaging/` directory is a slightly modified fork of the original environm
 - Added `full_info_mode` to get all information from the observation conveniently
 - Changed collision logic: when two agents want the same cell, one fails randomly while the other succeeds
 
-## Mathematical Functions
+## How a Simulation Step Works
 
-### Expected Reward (solo)
+Each game step follows the same sequence for every agent: update state, learn from past predictions, predict other agents, select a target fruit, and walk or load. The sections below walk through this sequence and the math behind each part.
+
+### 1. State Update and Learning
+
+At the start of each step, `update_agents()` refreshes positions, fruits, and pathfinding grids from the new gymnasium observation. Before the agent makes any decisions, it trains on any predictions that received ground truth labels since the last step.
+
+Learning is **online and supervised**, not reinforcement learning. Ground truth comes from observing what actually happens in the game:
+
+- When a fruit disappears (it was loaded), `record_ground_truth` labels all predictions that referenced that fruit: `1.0` if the predicted agent was adjacent (participated in loading), `0.0` otherwise.
+- `agent.learn()` trains on all labeled predictions using MSE loss and Adam optimizer, then discards them. Unlabeled predictions (for fruits still on the map) are kept for future labeling.
+
+```
+Game step N:
+  Agent α predicts: "Will agent β target fruit F?"
+  → stores (input_data, prediction=0.7, ground_truth=None)
+
+Game step N+t:
+  Fruit F is loaded! Observation shows F disappeared.
+  → record_ground_truth checks: was agent β adjacent to F?
+  → Yes → ground_truth = 1.0
+
+Game step N+6:
+  update_agents → agent.learn()
+  → trains on (input_data, target=1.0), MSE loss, backprop
+  → discards this labeled prediction
+```
+
+### 2. Predicting Other Agents (Neural Network)
+
+Each agent owns an instance of `AgentPredictor` (defined in `neuroevolution.py`), an attention-based model that answers: *"What is the probability that agent X will target fruit Y?"*
+
+For each (agent, fruit) pair, `_build_nn_input` constructs the structured input and the `AgentPredictor` outputs a probability. Predictions persist across timesteps — an agent only re-runs the NN for another agent when that agent deviates from its predicted A* path, which drastically reduces NN calls.
+
+#### Input normalisation
+
+All NN inputs are normalized against fixed game-settings bounds, not against the current observation:
+
+```
+level_norm  = level / max_level_from_settings
+dist_norm   = A*_distance / (field_size × 2)
+```
+
+This keeps inputs stable across episodes regardless of which agents or fruits happen to be present. Distances are A* shortest path lengths using cardinal moves only (no diagonals).
+
+#### Architecture
+
+Refernces:
+https://arxiv.org/abs/1703.06114
+https://arxiv.org/abs/1706.03762
+
+The number of agents can vary between games. Attention naturally handles variable-length sets while being **permutation-invariant** — swapping two agents in the input produces the same output. All agents are visible in a single forward pass, enabling n-th order belief reasoning.
+
+```
+                    ┌─────────────────────────────────┐
+                    │         AgentPredictor          │
+                    └─────────────────────────────────┘
+
+  Inputs:
+    fruit_level      (batch, 1)    — normalized fruit level
+    focal_features   (batch, 2)    — [level, distance] of agent being predicted
+    others_features  (batch, N, 2) — [level, distance] of every other agent (variable N)
+
+  ┌──────────────────────────────────────────────────────────┐
+  │  1. Shared Encoder (φ)                                   │
+  │     nn.Linear(2, 8) → ReLU                               │
+  │     Applied with identical weights to:                   │
+  │       • focal agent      → focal_embedding   (batch, 8)  │
+  │       • each other agent → others_embeddings (batch,N,8) │
+  └──────────────────────────────────────────────────────────┘
+                          │
+  ┌──────────────────────────────────────────────────────────┐
+  │  2. Scaled Dot-Product Attention                         │
+  │     query = W_q · focal_embedding          (batch, 8)    │
+  │     scores = others_embeddings · query^T / √8            │
+  │     weights = softmax(scores)              (batch, N)    │
+  │     context = weights · others_embeddings  (batch, 8)    │
+  │                                                          │
+  │     If N=0: context = zeros(8)                           │
+  └──────────────────────────────────────────────────────────┘
+                          │
+  ┌──────────────────────────────────────────────────────────┐
+  │  3. Decision Network (ρ)                                 │
+  │     input = [fruit_level, focal_level, focal_dist,       │
+  │              context]                      (batch, 11)   │
+  │     nn.Linear(11, 16) → ReLU → nn.Linear(16, 1) → σ      │
+  │     output ∈ [0, 1]                        (batch, 1)    │
+  └──────────────────────────────────────────────────────────┘
+```
+
+**Key properties:**
+- **Shared encoder**: The same 2→8 network encodes both the focal agent and all other agents, forcing the network to learn a single representation rather than memorizing slot-specific patterns.
+- **Attention (query)**: The query projection `W_q` is a learned linear layer that transforms the focal agent's embedding into a relevance-matching vector. It learns to answer: *"given who the focal agent is (level, distance to fruit), what kind of other agent would influence this prediction?"* The hypothesis: The dot product between the query and each other agent's embedding should produce a relevance score — e.g. when the focal agent is weak and far away, the network might learn that strong, nearby agents are highly relevant because they would compete for the fruit.
+- **Permutation invariance**: No positional encoding, so the output is identical regardless of agent ordering.
+- **N-th order beliefs**: All agents visible in one pass enables reasoning like *"Agent A will target this fruit because Agent B is far away and won't compete."*
+
+#### Why supervised and not RL?
+
+Walking is automated via A* pathfinding — the only decision is *which fruit to target*. The NN estimates target probabilities directly. Ground truth labels are available for free whenever a fruit is loaded.
+
+### 3. Target Selection (Expected Reward)
+
+Using the NN predictions from step 2, the agent selects the fruit that maximizes expected reward.
+
+#### Dynamic threshold
+
+Before evaluating fruits, a threshold filters out low-probability helpers:
+
+```
+τ = max(Q1(predictions), 1 / |feasible_fruits|)
+```
+
+- `Q1` = 25th percentile of this agent's current-round NN predictions
+- `1/|feasible_fruits|` = "better than random" baseline
+
+Only agents with `P > τ` are considered as potential helpers.
+
+#### Expected reward (solo)
+
 When `agent_level >= fruit_level`, the agent can load the fruit alone:
 
 ```
 E[R] = agent_level × fruit_level
 ```
 
-### Expected Reward (cooperative)
+#### Expected reward (cooperative)
+
 When cooperation is needed, enumerate all subsets S of filtered candidate helpers:
 
 ```
@@ -66,29 +184,10 @@ where:
 
 No distance penalty is applied — the NN already encodes distance in its inputs.
 
-### Dynamic Threshold
-Before evaluating fruits, a threshold filters out low-probability helpers:
+### 4. Walking and Loading
 
-```
-τ = max(Q1(predictions), 1 / |feasible_fruits|)
-```
+Once a target fruit is selected, the agent uses A* pathfinding to walk to the closest free loading slot adjacent to the fruit. When it arrives, it issues a LOAD action. The environment rewards all agents adjacent to a fruit when the sum of their levels meets the fruit's level:
 
-- `Q1` = 25th percentile of this agent's current-round NN predictions
-- `1/|feasible_fruits|` = "better than random" baseline
-
-Only agents with `P > τ` are considered as potential helpers.
-
-### Min-Max Normalisation (NN input)
-Applied to agent levels, distances, and fruit levels before feeding the neural network:
-
-```
-x_norm = (x − x_min) / (x_max − x_min)
-```
-
-### Path Distance
-A* shortest path length using cardinal moves only (no diagonals). Used both for navigation and as a feature in the NN input.
-
-### Reward Formula (environment)
 ```
 reward = agent_level × food_level
 ```

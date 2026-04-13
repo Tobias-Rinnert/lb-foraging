@@ -196,7 +196,41 @@ Once a target fruit is selected, the agent uses A* pathfinding to walk to the cl
 reward = agent_level × food_level
 ```
 
-## Neuroevolution
+## Survival Simulation
+
+Between episodes, agents age, starve, and reproduce. The mechanics live in `game_runner.py`.
+
+### Hunger and Death
+
+Each step, every alive agent's hunger increases by:
+
+```
+Δhunger = hunger_rate + nearby_alive_count × crowding_penalty
+```
+
+where `nearby_alive_count` is the number of alive agents within `crowding_radius` cells (Euclidean distance). When an agent eats (reward > 0), its hunger resets to 0.0. When hunger reaches 1.0, the agent is added to `dead_agents` and its `is_alive` flag is set to `False`. Dead agents skip all cognition, learning, and action selection for the rest of the episode.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `hunger_rate` | 0.001 | Base hunger per step |
+| `crowding_radius` | 3 | Radius in cells for crowding detection |
+| `crowding_penalty` | 0.0002 | Extra hunger per nearby alive agent |
+
+### Food Growth
+
+When new fruits appear in the environment, they start hidden (`food_growth = 0.0`) and only become visible to agents once their growth value reaches 1.0. Each step, fruits on grass cells grow by `food_growth_rate`. Fruits on stone cells do not grow.
+
+Fruits present at episode start are pre-populated at 1.0 so agents are not blind at the beginning.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `food_growth_rate` | 0.005 | Growth increment per step (on grass) |
+
+### Terrain (CA Map)
+
+`map_generator.generate_ca_map()` generates a `(field_size, field_size)` binary terrain map at the start of the first episode (reused across subsequent episodes, regenerated on total extinction). Terrain is shared with `lbf_gym.py`: stone cells (`ca_map == 0`) become obstacles in the A* pathfinding grid.
+
+### Neuroevolution
 
 Agents evolve between episodes. The building blocks live in `neuroevolution.py`.
 
@@ -237,6 +271,32 @@ n_children = floor(food_eaten[parent_id] / foods_per_child)
 ```
 
 For each child: mutate dims → new `AgentPredictor` → `transfer_predictor_weights` → fresh Adam optimizer. Children get sequential IDs starting at 0.
+
+### `evolve()` — inter-episode lifecycle
+
+Called by the application between episodes:
+
+1. Build parent genomes from alive agents (with NNs) and their food-eaten counts.
+2. Call `reproduce()` to create the next generation.
+3. **Fallback**: if no parent earned enough food for a child, each survivor produces one mutated child (so the population never collapses due to a hard episode).
+4. **Total extinction**: if no survivors, clear genomes, reset player count to `initial_number_players`, and regenerate terrain.
+5. Save the best parent genome to `saved_genome.pt`.
+6. Set `_evolved_genomes` (injected at next `reset()`) and `_next_player_count`.
+
+### Genome Persistence
+
+The best parent genome (highest food count) is saved to `saved_genome.pt` in the repo root after every episode via `_save_best_genome()`. On the next app start, `_load_saved_genome()` reads it back. On the first `reset()` call, a full initial population is bootstrapped from the saved genome via `reproduce()`, then `_saved_genome` is cleared.
+
+This means trained weights survive restarts and settings changes. The save file is NOT cleared by `rebuild()`.
+
+```
+App start → _load_saved_genome() → _saved_genome set
+reset()   → reproduce([saved_genome], synthetic_food) → _evolved_genomes populated
+episode   → agents learn, eat, starve, die
+evolve()  → reproduce(alive_parents) → _save_best_genome() → next generation ready
+reset()   → inject _evolved_genomes into new agents
+...
+```
 
 ## Installation
 

@@ -347,3 +347,141 @@ class TestRecordGroundTruth:
     def test_empty_previous_fruits_is_noop(self, gym_instance):
         """record_ground_truth with an empty list does nothing."""
         gym_instance.record_ground_truth([])  # must not raise
+
+
+# ── Phase 2: food_growth, dead agents, ca_map ────────────────────────
+
+class TestFoodGrowthFilter:
+    """Tests for food_growth filtering in get_fruit_infos."""
+
+    def test_unripe_fruit_is_hidden(self):
+        """Fruit with food_growth < 1.0 is excluded from lbf_gym.fruits."""
+        obs = make_observation(fruit_positions=[(1, 3, 2)])
+        gym_inst = LBF_GYM(obs)
+        food_growth = {(1, 3): 0.5}
+        gym_inst.get_fruit_infos(food_growth)
+        assert len(gym_inst.fruits) == 0
+
+    def test_ripe_fruit_is_visible(self):
+        """Fruit with food_growth >= 1.0 appears in lbf_gym.fruits."""
+        obs = make_observation(fruit_positions=[(1, 3, 2)])
+        gym_inst = LBF_GYM(obs)
+        food_growth = {(1, 3): 1.0}
+        gym_inst.get_fruit_infos(food_growth)
+        assert len(gym_inst.fruits) == 1
+
+    def test_mixed_growth_only_shows_ripe(self):
+        """Only fruits with growth >= 1.0 are visible when multiple fruits exist."""
+        obs = make_observation(
+            field_size=8,
+            players=[{"id": 0, "position": (0, 0), "level": 1}],
+            fruit_positions=[(1, 1, 1), (3, 3, 2), (5, 5, 1)],
+        )
+        gym_inst = LBF_GYM(obs)
+        food_growth = {(1, 1): 1.0, (3, 3): 0.3, (5, 5): 1.0}
+        gym_inst.get_fruit_infos(food_growth)
+        visible_positions = [tuple(f.position) for f in gym_inst.fruits]
+        assert (1, 1) in visible_positions
+        assert (5, 5) in visible_positions
+        assert (3, 3) not in visible_positions
+
+    def test_no_food_growth_shows_all_fruits(self):
+        """When food_growth is None, all fruits in the field are visible."""
+        obs = make_observation(
+            field_size=8,
+            players=[{"id": 0, "position": (0, 0), "level": 1}],
+            fruit_positions=[(2, 3, 2), (4, 5, 1)],
+        )
+        gym_inst = LBF_GYM(obs)
+        gym_inst.get_fruit_infos(food_growth=None)
+        assert len(gym_inst.fruits) == 2
+
+
+class TestDeadAgents:
+    """Tests for dead agent handling in update_agents and agents_choose_actions."""
+
+    def test_dead_agent_skips_cognition(self):
+        """Dead agent's known_fruits is not set during update_agents."""
+        obs = make_observation()
+        gym_inst = LBF_GYM(obs)
+        # First update to give agent known_fruits
+        gym_inst.update_agents(obs["player_infos"])
+        agent_0 = next(a for a in gym_inst.agents if a.id == 0)
+        assert agent_0.known_fruits is not None
+
+        # Reset known_fruits and mark agent 0 as dead
+        agent_0.known_fruits = None
+        gym_inst.update_agents(obs["player_infos"], dead_agents={0})
+        assert agent_0.known_fruits is None  # skipped for dead agent
+
+    def test_dead_agent_position_still_updated(self):
+        """Dead agent's position is updated even when cognition is skipped."""
+        obs = make_observation()
+        gym_inst = LBF_GYM(obs)
+        new_obs = make_observation(players=[
+            {"id": 0, "position": (2, 2), "level": 1},
+            {"id": 1, "position": (3, 3), "level": 2},
+        ])
+        gym_inst.update_agents(new_obs["player_infos"], dead_agents={0})
+        agent_0 = next(a for a in gym_inst.agents if a.id == 0)
+        assert np.array_equal(agent_0.position, np.array([2, 2]))
+
+    def test_dead_agents_get_action_zero(self):
+        """agents_choose_actions returns 0 for agents in dead_agents."""
+        obs = make_observation()
+        gym_inst = LBF_GYM(obs)
+        gym_inst.update_agents(obs["player_infos"])  # give agents known_fruits
+        actions = gym_inst.agents_choose_actions(dead_agents={0})
+        agent_0_idx = next(i for i, a in enumerate(gym_inst.agents) if a.id == 0)
+        assert actions[agent_0_idx] == np.int64(0)
+
+    def test_alive_agent_not_affected_by_dead_set(self):
+        """Alive agents are still updated normally when dead_agents is provided."""
+        obs = make_observation()
+        gym_inst = LBF_GYM(obs)
+        gym_inst.update_agents(obs["player_infos"], dead_agents={0})
+        agent_1 = next(a for a in gym_inst.agents if a.id == 1)
+        assert agent_1.known_fruits is not None
+
+
+class TestCaMapPathfinding:
+    """Tests for ca_map stone-cell obstacles in create_path_finding_grid."""
+
+    def test_stone_cells_are_obstacles(self):
+        """Cells with ca_map == 0 (stone) become 0 in the pathfinding grid."""
+        obs = make_observation()
+        gym_inst = LBF_GYM(obs)
+        ca_map = np.ones((5, 5), dtype=np.int8)
+        ca_map[3, 3] = 0  # stone at (3, 3)
+        agent = gym_inst.agents[0]
+        grid = gym_inst.create_path_finding_grid(agent, ca_map)
+        assert grid[3, 3] == 0
+
+    def test_grass_cells_remain_walkable(self):
+        """Cells with ca_map == 1 (grass) stay walkable if not occupied."""
+        obs = make_observation()
+        gym_inst = LBF_GYM(obs)
+        ca_map = np.ones((5, 5), dtype=np.int8)
+        agent = gym_inst.agents[0]
+        grid = gym_inst.create_path_finding_grid(agent, ca_map)
+        # (3, 0) has no fruit and no loading agent — should be walkable
+        assert grid[3, 0] == 1
+
+    def test_ca_map_none_does_not_change_grid(self):
+        """Without ca_map, the grid is identical to the no-ca_map case."""
+        obs = make_observation()
+        gym_inst = LBF_GYM(obs)
+        agent = gym_inst.agents[0]
+        grid_no_map = gym_inst.create_path_finding_grid(agent, ca_map=None)
+        grid_with_none = gym_inst.create_path_finding_grid(agent)
+        assert np.array_equal(grid_no_map, grid_with_none)
+
+    def test_ca_map_passed_through_initialize_agents(self):
+        """ca_map passed to LBF_GYM.__init__ is applied to initial pathfinding grids."""
+        ca_map = np.ones((5, 5), dtype=np.int8)
+        ca_map[4, 4] = 0  # stone where agent 1 is NOT (agent 1 is at (4,4) but that's a player pos)
+        ca_map[2, 2] = 0  # stone at a free cell
+        obs = make_observation()
+        gym_inst = LBF_GYM(obs, ca_map=ca_map)
+        for agent in gym_inst.agents:
+            assert agent.path_finding_grid[2, 2] == 0

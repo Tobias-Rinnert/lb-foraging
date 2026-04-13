@@ -60,8 +60,6 @@ def default_params() -> dict:
         "fallback_to_closest": False,
         # Survival & evolution
         "hunger_rate": 0.001,
-        "crowding_radius": 3,
-        "crowding_penalty": 0.0002,
         "food_growth_rate": 0.005,
         "foods_per_child": 3,
         "grass_ratio": 0.70,
@@ -238,21 +236,11 @@ class GameRunner:
 
         # Hunger: increase for alive agents; mark dead if >= 1.0
         hunger_rate = self.params.get("hunger_rate", 0.001)
-        crowding_radius = self.params.get("crowding_radius", 3)
-        crowding_penalty = self.params.get("crowding_penalty", 0.0002)
         for agent in self.lbf_gym.agents:
             if agent.id in self.dead_agents:
                 continue
-            nearby_alive = sum(
-                1 for other in self.lbf_gym.agents
-                if other.id != agent.id
-                and other.id not in self.dead_agents
-                and np.linalg.norm(agent.position - other.position) <= crowding_radius
-            )
             self.agent_hunger[agent.id] = (
-                self.agent_hunger.get(agent.id, 0.0)
-                + hunger_rate
-                + nearby_alive * crowding_penalty
+                self.agent_hunger.get(agent.id, 0.0) + hunger_rate
             )
             if self.agent_hunger[agent.id] >= 1.0:
                 self.dead_agents.add(agent.id)

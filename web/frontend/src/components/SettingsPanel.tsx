@@ -10,10 +10,11 @@ interface Props {
 interface FieldDef {
   label: string;
   key: keyof GameParams;
-  type: "spin" | "check";
+  type: "spin" | "check" | "float";
   tooltip: string;
   min?: number;
   max?: number;
+  step?: number;
 }
 
 const SECTIONS: { title: string; fields: FieldDef[] }[] = [
@@ -40,6 +41,16 @@ const SECTIONS: { title: string; fields: FieldDef[] }[] = [
       { label: "Max food", key: "max_num_food", type: "spin", min: 1, max: 30, tooltip: "Maximum number of food items spawned per episode" },
       { label: "Min level", key: "min_food_level", type: "spin", min: 1, max: 5, tooltip: "Lowest possible food level. Agents need combined level >= food level to collect" },
       { label: "Max level", key: "max_food_level", type: "spin", min: 1, max: 5, tooltip: "Highest possible food level" },
+    ],
+  },
+  {
+    title: "Survival & Evolution",
+    fields: [
+      { label: "Hunger rate", key: "hunger_rate", type: "float", min: 0, max: 0.1, step: 0.0001, tooltip: "Hunger increase per step. Agent dies when hunger reaches 1.0" },
+      { label: "Food growth rate", key: "food_growth_rate", type: "float", min: 0, max: 0.1, step: 0.001, tooltip: "Growth increment per step for new fruits on grass cells. <1.0 = hidden" },
+      { label: "Foods per child", key: "foods_per_child", type: "spin", min: 1, max: 20, tooltip: "Food items an agent must eat to produce one offspring" },
+      { label: "Grass ratio", key: "grass_ratio", type: "float", min: 0.1, max: 1.0, step: 0.05, tooltip: "Initial probability of a terrain cell being grass (0=all stone, 1=all grass)" },
+      { label: "CA smoothing", key: "ca_smooth_iterations", type: "spin", min: 0, max: 20, tooltip: "Cellular automata smoothing passes for terrain generation" },
     ],
   },
   {
@@ -89,6 +100,16 @@ export default function SettingsPanel({ params, send, onClose }: Props) {
                     max={field.max}
                     value={Number(local[field.key] ?? 0)}
                     onChange={(e) => setValue(field.key, Number(e.target.value))}
+                  />
+                )}
+                {field.type === "float" && (
+                  <input
+                    type="number"
+                    min={field.min}
+                    max={field.max}
+                    step={field.step ?? 0.01}
+                    value={Number(local[field.key] ?? 0)}
+                    onChange={(e) => setValue(field.key, parseFloat(e.target.value))}
                   />
                 )}
                 {field.type === "check" && (

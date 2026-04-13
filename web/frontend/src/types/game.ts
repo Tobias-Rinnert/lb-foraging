@@ -5,6 +5,10 @@ export interface AgentState {
   color: string;
   target_position: [number, number] | null;
   is_loading: boolean;
+  is_alive?: boolean;
+  hunger?: number;
+  food_eaten?: number;
+  nn_architecture?: { embedding_dim: number; decision_hidden: number };
 }
 
 export interface FruitState {
@@ -29,6 +33,12 @@ export interface GameParams {
   observe_agent_levels: boolean;
   full_info_mode: boolean;
   fallback_to_closest: boolean;
+  // Survival & evolution
+  hunger_rate: number;
+  food_growth_rate: number;
+  foods_per_child: number;
+  grass_ratio: number;
+  ca_smooth_iterations: number;
 }
 
 export interface MetricsLatest {
@@ -48,4 +58,9 @@ export interface GameFrame {
   fruits: FruitState[];
   params: GameParams;
   metrics_latest?: MetricsLatest;
+  ca_map?: number[][] | null;
+  food_growth?: Record<string, number>;
+  dead_agents?: number[];
+  population_size?: number;
+  next_population_size?: number;
 }

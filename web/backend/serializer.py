@@ -38,6 +38,13 @@ def serialize_frame(runner, paused: bool) -> dict:
                 "color": _AGENT_COLOURS[agent.id % len(_AGENT_COLOURS)],
                 "target_position": target_pos,
                 "is_loading": bool(agent.is_loading),
+                "is_alive": bool(getattr(agent, "is_alive", True)),
+                "hunger": float(runner.agent_hunger.get(agent.id, 0.0)),
+                "food_eaten": int(runner.agent_food_eaten.get(agent.id, 0)),
+                "nn_architecture": {
+                    "embedding_dim": int(getattr(agent, "embedding_dim", 8)),
+                    "decision_hidden": int(getattr(agent, "decision_hidden", 16)),
+                },
             })
 
         for fruit in runner.lbf_gym.fruits:
@@ -59,7 +66,15 @@ def serialize_frame(runner, paused: bool) -> dict:
         "rewards": [float(r) for r in runner.rewards],
         "agents": agents,
         "fruits": fruits,
-        "params": {k: _to_list(v) for k, v in runner.params.items()},
+        "params": {k: _to_list(v) for k, v in runner.params.items() if not k.startswith("_")},
+        "ca_map": runner.ca_map.tolist() if runner.ca_map is not None else None,
+        "food_growth": {
+            f"{k[0]},{k[1]}": round(float(v), 4)
+            for k, v in runner.food_growth.items()
+        },
+        "dead_agents": list(runner.dead_agents),
+        "population_size": len(runner.lbf_gym.agents) if runner.lbf_gym else 0,
+        "next_population_size": runner._next_player_count,
     }
     metrics_latest = serialize_metrics_latest(runner.metrics)
     if metrics_latest is not None:

@@ -56,7 +56,8 @@ async def ws_endpoint(websocket: WebSocket):
             await asyncio.to_thread(runner.step)
             await send_frame()
             if runner.episode_over:
-                runner.reset()
+                await asyncio.to_thread(runner.evolve)
+                await asyncio.to_thread(runner.reset)
                 await send_frame()
             await asyncio.sleep(speed_ms / 1000)
 
@@ -93,7 +94,8 @@ async def ws_endpoint(websocket: WebSocket):
                 await asyncio.to_thread(runner.step)
                 if runner.episode_over:
                     await send_frame()
-                    runner.reset()
+                    await asyncio.to_thread(runner.evolve)
+                    await asyncio.to_thread(runner.reset)
                 await send_frame()
 
             elif msg_type == "set_speed":
@@ -106,16 +108,22 @@ async def ws_endpoint(websocket: WebSocket):
                 paused = True
                 stop_loop()
                 new_params = msg.get("params", {})
-                # Ensure int types for numeric params
                 int_keys = (
                     "field_size", "number_players", "max_num_food",
                     "max_episode_steps", "sight",
                     "min_player_level", "max_player_level",
                     "min_food_level", "max_food_level",
+                    "ca_smooth_iterations", "foods_per_child",
+                )
+                float_keys = (
+                    "hunger_rate", "food_growth_rate", "grass_ratio",
                 )
                 for k in int_keys:
                     if k in new_params:
                         new_params[k] = int(new_params[k])
+                for k in float_keys:
+                    if k in new_params:
+                        new_params[k] = float(new_params[k])
                 merged = {**default_params(), **new_params}
                 await asyncio.to_thread(runner.rebuild, merged)
                 await websocket.send_json({"type": "metrics_cleared"})

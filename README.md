@@ -202,19 +202,11 @@ Between episodes, agents age, starve, and reproduce. The mechanics live in `game
 
 ### Hunger and Death
 
-Each step, every alive agent's hunger increases by:
-
-```
-Δhunger = hunger_rate + nearby_alive_count × crowding_penalty
-```
-
-where `nearby_alive_count` is the number of alive agents within `crowding_radius` cells (Euclidean distance). When an agent eats (reward > 0), its hunger resets to 0.0. When hunger reaches 1.0, the agent is added to `dead_agents` and its `is_alive` flag is set to `False`. Dead agents skip all cognition, learning, and action selection for the rest of the episode.
+Each step, every alive agent's hunger increases by `hunger_rate`. When an agent eats (reward > 0), its hunger resets to 0.0. When hunger reaches 1.0, the agent is added to `dead_agents` and its `is_alive` flag is set to `False`. Dead agents skip all cognition, learning, and action selection for the rest of the episode.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `hunger_rate` | 0.001 | Base hunger per step |
-| `crowding_radius` | 3 | Radius in cells for crowding detection |
-| `crowding_penalty` | 0.0002 | Extra hunger per nearby alive agent |
+| `hunger_rate` | 0.001 | Hunger increase per step |
 
 ### Food Growth
 
@@ -298,6 +290,42 @@ reset()   → inject _evolved_genomes into new agents
 ...
 ```
 
+## Web App — Survival Features
+
+The browser GUI renders the survival simulation in real time.
+
+### Terrain
+
+Stone cells are drawn in dark grey, grass cells in a faint green tint. Growing fruits (food_growth < 1.0) show a fading green overlay on their grass cell, getting brighter as they approach ripeness.
+
+### Agent Status
+
+Each agent displays a hunger bar below its sprite. The bar fills from green (0 hunger) through yellow to red (hunger → 1.0). Dead agents are rendered as ghosts at 30% opacity.
+
+### Population HUD
+
+The frame payload carries `population_size` (current alive agents) and `next_population_size` (children ready for next episode), exposed for overlay display.
+
+### Survival & Evolution Settings
+
+The settings panel has a new **Survival & Evolution** section with all 7 survival parameters. Float inputs support fine-grained editing with configurable step sizes. Changes take effect on the next **Apply & Restart**.
+
+### End-to-End Flow
+
+```
+App start
+  └─ _load_saved_genome() → inject saved weights into first generation
+
+Episode loop (Play button):
+  step() → update hunger/food_growth → agents act
+  episode_over? → evolve() → _save_best_genome() → reset()
+
+Between episodes:
+  reproduce(alive_parents) → new generation
+  inject genomes into agents via reset()
+  ca_map reused (regenerated on total extinction)
+```
+
 ## Installation
 
 ```sh
@@ -346,5 +374,4 @@ This project is source-available with an **academic publication restriction**. Y
 The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` for the original license.
 
 ## TODOs
-- evolution to fine tune neural net hyperparameters
-- predictions of agent a does not go to fruit b must also be saved and when correct must backward pass. check if this is in
+- evo leADS TO only one agent in game whoch cant load all fruits due to low lebel

@@ -27,6 +27,8 @@ tr_lbf_addon/           My Python package
   lbf_gym.py            Training manager — processes observations, updates agents and fruits,
                         records ground truth labels, triggers NN training when fruits are loaded
   game_runner.py        Game loop used by the web backend
+  map_generator.py      Cellular automata terrain generator (stone/grass maps)
+  neuroevolution.py     AgentPredictor architecture, mutation, weight transfer, reproduction
   tests/                Unit tests
 
 web/                    Browser GUI
@@ -140,6 +142,8 @@ The number of agents can vary between games. Attention naturally handles variabl
 - **Attention (query)**: The query projection `W_q` is a learned linear layer that transforms the focal agent's embedding into a relevance-matching vector. It learns to answer: *"given who the focal agent is (level, distance to fruit), what kind of other agent would influence this prediction?"* The hypothesis: The dot product between the query and each other agent's embedding should produce a relevance score — e.g. when the focal agent is weak and far away, the network might learn that strong, nearby agents are highly relevant because they would compete for the fruit.
 - **Permutation invariance**: No positional encoding, so the output is identical regardless of agent ordering.
 - **N-th order beliefs**: All agents visible in one pass enables reasoning like *"Agent A will target this fruit because Agent B is far away and won't compete."*
+- **Configurable dimensions**: `embedding_dim` and `decision_hidden` are per-agent hyperparameters (defaults: 8 and 16). They can be set from an evolved genome before `init_neural_network()` is called, allowing the neuroevolution system to vary architecture sizes across agents.
+- **Survival guard**: Dead agents (`is_alive = False`) skip all cognition, learning, and action selection — `choose_next_action()` immediately returns `0` for dead agents.
 
 #### Why supervised and not RL?
 
@@ -191,6 +195,48 @@ Once a target fruit is selected, the agent uses A* pathfinding to walk to the cl
 ```
 reward = agent_level × food_level
 ```
+
+## Neuroevolution
+
+Agents evolve between episodes. The building blocks live in `neuroevolution.py`.
+
+### `mutate_predictor_dims`
+
+Each dimension (`embedding_dim`, `decision_hidden`) is independently mutated with probability `prob` (default 0.3) by adding a random delta from `{-2, -1, +1, +2}`, clamped to `[min_dim, max_dim]` (default 4–64).
+
+### `transfer_predictor_weights`
+
+Copies overlapping weight slices from a parent `AgentPredictor` to a child `AgentPredictor`. When dimensions differ, only the `[:min_dim]` slice is copied; extra neurons in the child retain random initialisation. This preserves learned representations while allowing the architecture to grow or shrink:
+
+| Layer | Copied slice |
+|-------|-------------|
+| `agent_encoder[0]` Linear(2, emb) | `[:min_emb, :2]` weights, `[:min_emb]` bias |
+| `attention_query` Linear(emb, emb) | `[:min_emb, :min_emb]` weights, `[:min_emb]` bias |
+| `decision_net[0]` Linear(3+emb, dh) | first 3 columns (fixed inputs) + `[3:3+min_emb]` (context), rows `[:min_dh]` |
+| `decision_net[2]` Linear(dh, 1) | `[0, :min_dh]` weights, `[0]` bias |
+
+### `AgentGenome`
+
+A dataclass bundling everything needed to reconstruct an agent's NN across episodes:
+
+```
+agent_id        int     — unique identifier
+embedding_dim   int     — per-agent embedding size (default 8)
+decision_hidden int     — decision network hidden size (default 16)
+fitness         float   — accumulated fitness (e.g. food eaten)
+nn_model        AgentPredictor | None
+optimizer       Adam | None
+```
+
+### `reproduce`
+
+Creates the next generation from a list of parent genomes and a food-eaten count:
+
+```
+n_children = floor(food_eaten[parent_id] / foods_per_child)
+```
+
+For each child: mutate dims → new `AgentPredictor` → `transfer_predictor_weights` → fresh Adam optimizer. Children get sequential IDs starting at 0.
 
 ## Installation
 

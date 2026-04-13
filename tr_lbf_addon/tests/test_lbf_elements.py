@@ -97,6 +97,37 @@ class TestAgentInit:
         assert "id: 0" in repr_str
         assert "is loading: False" in repr_str
 
+    def test_default_is_alive_true(self, agent):
+        """New agent defaults to is_alive=True."""
+        assert agent.is_alive is True
+
+    def test_default_embedding_and_hidden_dims(self, agent):
+        """New agent defaults to embedding_dim=8 and decision_hidden=16."""
+        assert agent.embedding_dim == 8
+        assert agent.decision_hidden == 16
+
+
+# ── Survival: dead agent behaviour ────────────────────────────────────
+
+class TestDeadAgent:
+    """Tests for agent survival fields and dead-guard behaviour."""
+
+    def test_dead_agent_returns_zero_action(self, agent, fruit_with_free_slots):
+        """Agent with is_alive=False returns action 0 without accessing target."""
+        agent.is_alive = False
+        agent.target = fruit_with_free_slots
+        action = agent.choose_next_action()
+        assert action == np.int64(0)
+
+    def test_init_neural_network_with_custom_dims(self, agent):
+        """Setting embedding_dim and decision_hidden before init_neural_network uses those sizes."""
+        agent.embedding_dim = 12
+        agent.decision_hidden = 24
+        agent.init_neural_network()
+        assert agent.neural_network is not None
+        assert agent.neural_network.embedding_dim == 12
+        assert agent.neural_network.decision_net[0].out_features == 24
+
 
 # ── Direction and action mapping ─────────────────────────────────────
 

@@ -152,6 +152,12 @@ class Agent:
         "Current planned path as array of (row, col) positions"
         self.pathfinding_alg: AStarFinder = AStarFinder(diagonal_movement=DiagonalMovement.never)
         "A* pathfinding algorithm instance"
+        self.is_alive: bool = True
+        "True while the agent is alive; dead agents are skipped for cognition and learning"
+        self.embedding_dim: int = 8
+        "AgentPredictor embedding dimension; may be set from an evolved genome before init_neural_network"
+        self.decision_hidden: int = 16
+        "AgentPredictor decision hidden size; may be set from an evolved genome before init_neural_network"
         self.optimizer: torch.optim.Optimizer | None = None
         "Adam optimizer for NN training"
         self._max_agent_level: int = 5
@@ -209,6 +215,9 @@ class Agent:
         Returns:
             np.int64: the next action (0=none, 1-4=directions, 5=load)
         """
+        if not self.is_alive:
+            return np.int64(0)
+
         if not self.target.free_slots:
             self.target = None  # force re-selection next step
             return np.int64(0)
@@ -590,7 +599,10 @@ class Agent:
             None (sets self.neural_network and self.optimizer side effects)
         """
         from neuroevolution import AgentPredictor
-        model = AgentPredictor()
+        model = AgentPredictor(
+            embedding_dim=self.embedding_dim,
+            decision_hidden=self.decision_hidden,
+        )
         self.neural_network = model
         self.optimizer = torch.optim.Adam(model.parameters())
         

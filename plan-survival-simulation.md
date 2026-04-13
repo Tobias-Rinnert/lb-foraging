@@ -54,6 +54,13 @@ Tests in `test_neuroevolution.py`: mutate bounds, transfer same/grow/shrink dims
 
 Tests: dead agent returns 0, custom dims create correct model, default is_alive is True
 
+### 1d. Update README
+
+Update the README to document:
+- `map_generator.py` in the repository layout
+- Neuroevolution section: `mutate_predictor_dims`, `transfer_predictor_weights`, `AgentGenome`, `reproduce`
+- Agent survival fields (`is_alive`, `embedding_dim`, `decision_hidden`) in the architecture description
+
 ---
 
 ## Phase 2 — Integration (depends on Phase 1)
@@ -113,11 +120,54 @@ self._next_player_count = params.get("number_players", 5)
 2. Call `reproduce(parents, food_eaten, foods_per_child)`
 3. Fallback if no children: each survivor gets 1 mutated child
 4. Total extinction: clear genomes, reset to initial_number_players, regenerate terrain
-5. Set `_evolved_genomes`, `_next_player_count`
+5. After determining children, call `_save_best_genome()` to persist the best parent
+6. Set `_evolved_genomes`, `_next_player_count`
 
-**`rebuild()`** — add: clear genomes, ca_map=None, reset _next_player_count, set initial_number_players
+**`_save_best_genome(parent_genomes)`** — new private method:
+- Finds the parent with highest `fitness` (food eaten)
+- Saves to `saved_genome.pt` in the repo root using `torch.save`:
+  ```python
+  torch.save({
+      "embedding_dim": genome.embedding_dim,
+      "decision_hidden": genome.decision_hidden,
+      "state_dict": genome.nn_model.state_dict(),
+  }, GENOME_SAVE_PATH)
+  ```
+- `GENOME_SAVE_PATH = Path(__file__).parent.parent / "saved_genome.pt"` (module-level constant)
+- Silent no-op if `parent_genomes` is empty or no model exists
+
+**`_load_saved_genome()`** — new private method:
+- Returns an `AgentGenome` loaded from `saved_genome.pt`, or `None` if the file doesn't exist
+- Reconstructs `AgentPredictor(embedding_dim, decision_hidden)`, loads state dict, wraps in fresh `AgentGenome`
+
+**`__init__`** — after building the env, call `_load_saved_genome()` and store as `self._saved_genome: AgentGenome | None`
+
+**`reset()`** — genome injection order:
+1. If `_evolved_genomes` is non-empty, use those (normal inter-episode evolution)
+2. Else if `_saved_genome` is not None (first episode after app start), call `reproduce([_saved_genome], {_saved_genome.agent_id: foods_per_child * initial_number_players}, foods_per_child)` to generate a full initial population of children, set `_evolved_genomes` from these children, then clear `_saved_genome` to None
+3. Else start fresh (no save file, first ever run)
+
+**`rebuild()`** — add: clear genomes, ca_map=None, reset _next_player_count, set initial_number_players. Do NOT clear `_saved_genome` — it persists across rebuilds so the saved weights survive settings changes.
 
 **`_rebuild_env_if_player_count_changed()`** — new: compare `_last_registered_players` vs `_next_player_count`, close/rebuild env if different
+
+### 2c. New file: `tr_lbf_addon/tests/test_genome_persistence.py`
+
+Tests for save/load round-trip:
+1. `test_save_creates_file` — after `_save_best_genome([genome])`, file exists at `GENOME_SAVE_PATH`
+2. `test_load_returns_none_when_no_file` — `_load_saved_genome()` returns None if file absent
+3. `test_save_load_roundtrip_preserves_dims` — saved embedding_dim and decision_hidden survive round-trip
+4. `test_save_load_roundtrip_preserves_weights` — all layer weights match after save/load
+5. `test_save_picks_best_fitness` — given two genomes with different fitness, saved genome has higher fitness dims
+6. `test_first_reset_uses_saved_genome` — runner with a save file generates `_evolved_genomes` from it on first reset
+
+### 2d. Update README
+
+Update the README to document:
+- `game_runner.py` survival mechanics (hunger, food growth, death, crowding)
+- `evolve()` / `_save_best_genome()` / `_load_saved_genome()` lifecycle
+- Genome persistence: `saved_genome.pt` location, what it contains, how it's used on restart
+- New survival params in the mathematical functions section (hunger formula, crowding penalty)
 
 ---
 
@@ -167,6 +217,13 @@ GameFrame: add `ca_map?`, `food_growth?`, `dead_agents?`, `population_size?`, `n
 - Import `drawTerrainMap` from renderer
 - Call `drawTerrainMap(ctx, frame.ca_map ?? null, frame.food_growth ?? {}, frame.field_size, cell, panX, panY)` after `drawGrid`, before `drawFreeSlots`
 
+### 3f. Update README
+
+Update the README to document:
+- Frontend survival features: terrain rendering, hunger bars, dead-agent ghosts, food growth overlay
+- New settings panel section (Survival & Evolution)
+- End-to-end flow from app start → load saved genome → play → evolve → save best → repeat
+
 ---
 
 ## Key files
@@ -187,6 +244,7 @@ GameFrame: add `ca_map?`, `food_growth?`, `dead_agents?`, `population_size?`, `n
 | `tr_lbf_addon/tests/test_neuroevolution.py` | Add mutation/transfer/reproduce tests |
 | `tr_lbf_addon/tests/test_lbf_elements.py` | Add is_alive, custom dims tests |
 | `tr_lbf_addon/tests/test_lbf_gym.py` | Add food growth, dead agent, stone cell tests |
+| `tr_lbf_addon/tests/test_genome_persistence.py` | NEW (6 tests) |
 
 ## Verification
 

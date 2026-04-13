@@ -375,3 +375,4 @@ The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` f
 
 ## TODOs
 - evo leADS TO only one agent in game whoch cant load all fruits due to low lebel
+- stone and grass cells rarely appear and dont look good. needs more verification and better visuals

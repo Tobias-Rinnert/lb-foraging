@@ -571,3 +571,74 @@ class TestChooseFruitForceReselect:
         agent.choose_fruit()  # no argument
 
         assert np.array_equal(agent.target.position, target.position)
+
+
+class TestChooseFruitStuckReselect:
+    """Tests for choose_fruit() stuck-triggered re-evaluation via _stationary_steps."""
+
+    def _make_stuck_agent(self, simple_grid, stationary_steps, target_fruit, other_fruit):
+        """Helper: agent with target already set and a given stationary_steps count."""
+        from tr_lbf_addon.lbf_elements import _STATIONARY_RESELECT_THRESHOLD
+        agent = Agent(id=0, position=np.array([0, 0]), level=2)
+        agent.path_finding_grid = simple_grid
+        agent.known_agents = []
+        agent.known_fruits = [target_fruit, other_fruit]
+        agent.target = target_fruit
+        agent._stationary_steps = stationary_steps
+        return agent
+
+    def test_no_reselect_below_threshold(self, simple_grid):
+        """Agent keeps its target when _stationary_steps is below the threshold."""
+        from tr_lbf_addon.lbf_elements import _STATIONARY_RESELECT_THRESHOLD
+        target = Fruit(position=np.array([2, 2]), level=1, free_slots=[np.array([2, 1])])
+        other  = Fruit(position=np.array([4, 4]), level=2, free_slots=[np.array([4, 3])])
+        agent = self._make_stuck_agent(simple_grid,
+                                       stationary_steps=_STATIONARY_RESELECT_THRESHOLD - 1,
+                                       target_fruit=target, other_fruit=other)
+
+        agent.choose_fruit()
+
+        assert np.array_equal(agent.target.position, target.position)
+
+    def test_reselect_at_threshold(self, simple_grid):
+        """choose_fruit() bypasses the early return when _stationary_steps == threshold."""
+        from tr_lbf_addon.lbf_elements import _STATIONARY_RESELECT_THRESHOLD
+        target = Fruit(position=np.array([2, 2]), level=1, free_slots=[np.array([2, 1])])
+        other  = Fruit(position=np.array([4, 4]), level=2, free_slots=[np.array([4, 3])])
+        agent = self._make_stuck_agent(simple_grid,
+                                       stationary_steps=_STATIONARY_RESELECT_THRESHOLD,
+                                       target_fruit=target, other_fruit=other)
+
+        agent.choose_fruit()
+
+        assert agent.target is not None  # re-evaluated and selected a fruit
+
+    def test_stationary_steps_reset_after_stuck_trigger(self, simple_grid):
+        """_stationary_steps resets to 0 when the stuck condition fires."""
+        from tr_lbf_addon.lbf_elements import _STATIONARY_RESELECT_THRESHOLD
+        target = Fruit(position=np.array([2, 2]), level=1, free_slots=[np.array([2, 1])])
+        other  = Fruit(position=np.array([4, 4]), level=2, free_slots=[np.array([4, 3])])
+        agent = self._make_stuck_agent(simple_grid,
+                                       stationary_steps=_STATIONARY_RESELECT_THRESHOLD,
+                                       target_fruit=target, other_fruit=other)
+
+        agent.choose_fruit()
+
+        assert agent._stationary_steps == 0, (
+            "_stationary_steps must reset so the agent gets a fresh window before next re-eval"
+        )
+
+    def test_no_reselect_immediately_after_reset(self, simple_grid):
+        """After a stuck-triggered reset, the next call does NOT re-evaluate again."""
+        from tr_lbf_addon.lbf_elements import _STATIONARY_RESELECT_THRESHOLD
+        target = Fruit(position=np.array([2, 2]), level=1, free_slots=[np.array([2, 1])])
+        other  = Fruit(position=np.array([4, 4]), level=2, free_slots=[np.array([4, 3])])
+        agent = self._make_stuck_agent(simple_grid,
+                                       stationary_steps=_STATIONARY_RESELECT_THRESHOLD,
+                                       target_fruit=target, other_fruit=other)
+
+        agent.choose_fruit()            # triggers reset, sets target
+        original_target = agent.target
+        agent.choose_fruit()            # _stationary_steps=0 → early return
+
+        assert agent.target is original_target

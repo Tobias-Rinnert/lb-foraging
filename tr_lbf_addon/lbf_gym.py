@@ -180,6 +180,10 @@ class LBF_GYM(Agent, Fruit):
             agent.path_finding_grid = self.create_path_finding_grid(agent, ca_map)
             # update position and level for all agents (alive and dead)
             new_position = np.array(new_player_info["position"])
+            if np.array_equal(new_position, agent.position):
+                agent._stationary_steps += 1
+            else:
+                agent._stationary_steps = 0
             agent.position = new_position
             agent.position_history.append(new_position)
             agent.level = new_player_info["level"]

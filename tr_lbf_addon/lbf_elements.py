@@ -20,6 +20,9 @@ from pathfinding.finder.a_star import AStarFinder
 import torch
 import torch.nn as nn
 
+_STATIONARY_RESELECT_THRESHOLD: int = 3
+"Steps without position change before an agent forces a full fruit re-evaluation."
+
 
 
 def _build_nn_input(focal_pos, focal_level, others, fruit, grid,
@@ -176,6 +179,8 @@ class Agent:
         "Mapping from agent_id to their predicted A* path"
         self.prediction_round: dict[int, int] = {}
         "Mapping from agent_id to the round when the prediction was made"
+        self._stationary_steps: int = 0
+        "Consecutive steps the agent has not moved; triggers re-evaluation at _STATIONARY_RESELECT_THRESHOLD"
 
 
     def __repr__(self) -> str:
@@ -305,9 +310,13 @@ class Agent:
         combinatorial expected reward via select_fruit_by_expected_reward().
 
         Steps:
-            1. Skip re-selection if current target is still on the map and force_reselect is False.
-               force_reselect=True is passed whenever any fruit was loaded this step, which also
-               covers level-ups (agents that ate a fruit are now stronger and should re-evaluate).
+            1. Skip re-selection if current target is still on the map and neither
+               force_reselect nor stuck is True.
+               force_reselect=True is passed whenever any fruit was loaded this step.
+               stuck=True fires when _stationary_steps >= _STATIONARY_RESELECT_THRESHOLD,
+               meaning the agent has not moved for several consecutive steps (e.g. repeated
+               failed cooperative LOAD attempts). On a stuck trigger _stationary_steps is
+               reset to 0 so the agent gets a fresh window before the next re-evaluation.
             2. Build feasible fruit list (solo + cooperative).
             3. Invalidate stale predictions for fruits no longer on the map.
             4. For each other agent: skip NN call if still on predicted path, else re-predict.
@@ -325,9 +334,13 @@ class Agent:
             self.target is not None
             and np.any(np.all(self.target.position == fruit_positions, axis=1))
         )
+        stuck = self._stationary_steps >= _STATIONARY_RESELECT_THRESHOLD
 
-        if current_target_still_in_game and not force_reselect:
+        if current_target_still_in_game and not force_reselect and not stuck:
             return
+
+        if stuck:
+            self._stationary_steps = 0  # reset window; don't re-evaluate every step while still
 
         coop_levels = self.get_possible_coop_level_sums([agent["level"] for agent in self.known_agents])
         max_achievable = int(max(coop_levels)) if len(coop_levels) > 0 else self.level

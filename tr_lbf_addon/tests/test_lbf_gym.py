@@ -444,6 +444,49 @@ class TestDeadAgents:
         assert agent_1.known_fruits is not None
 
 
+class TestStationaryStepTracking:
+    """Tests for _stationary_steps counter tracking in update_agents."""
+
+    def test_stationary_steps_increments_when_position_unchanged(self):
+        """_stationary_steps increments each step the agent does not move."""
+        obs = make_observation(players=[{"id": 0, "position": (0, 0), "level": 1},
+                                        {"id": 1, "position": (4, 4), "level": 2}])
+        gym_inst = LBF_GYM(obs)
+        agent_0 = next(a for a in gym_inst.agents if a.id == 0)
+        assert agent_0._stationary_steps == 0
+
+        gym_inst.update_agents(obs["player_infos"])  # position unchanged
+        assert agent_0._stationary_steps == 1
+
+        gym_inst.update_agents(obs["player_infos"])  # still unchanged
+        assert agent_0._stationary_steps == 2
+
+    def test_stationary_steps_resets_when_position_changes(self):
+        """_stationary_steps resets to 0 when the agent moves."""
+        obs = make_observation(players=[{"id": 0, "position": (0, 0), "level": 1},
+                                        {"id": 1, "position": (4, 4), "level": 2}])
+        gym_inst = LBF_GYM(obs)
+        agent_0 = next(a for a in gym_inst.agents if a.id == 0)
+
+        gym_inst.update_agents(obs["player_infos"])   # step in place → 1
+        assert agent_0._stationary_steps == 1
+
+        moved_obs = make_observation(players=[{"id": 0, "position": (0, 1), "level": 1},
+                                              {"id": 1, "position": (4, 4), "level": 2}])
+        gym_inst.update_agents(moved_obs["player_infos"])  # moved → reset
+        assert agent_0._stationary_steps == 0
+
+    def test_stationary_steps_zero_for_dead_agents_still_tracked(self):
+        """Dead agents' positions still update, so _stationary_steps is still tracked."""
+        obs = make_observation(players=[{"id": 0, "position": (0, 0), "level": 1},
+                                        {"id": 1, "position": (4, 4), "level": 2}])
+        gym_inst = LBF_GYM(obs)
+        agent_0 = next(a for a in gym_inst.agents if a.id == 0)
+
+        gym_inst.update_agents(obs["player_infos"], dead_agents={0})
+        assert agent_0._stationary_steps == 1  # position tracking still runs for dead agents
+
+
 class TestCaMapPathfinding:
     """Tests for ca_map stone-cell obstacles in create_path_finding_grid."""
 

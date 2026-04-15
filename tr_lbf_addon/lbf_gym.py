@@ -42,6 +42,8 @@ class LBF_GYM(Agent, Fruit):
         self.agents: list[Agent] | None = None
         # losses captured from last update_agents call; keyed by agent id
         self.last_step_losses_per_agent: dict[int, list[float]] = {}
+        self.any_fruit_loaded: bool = False
+        "True if at least one fruit was loaded (disappeared) in the most recent observation update"
         "Per-agent NN training losses from the last step"
         # get the full info field
         self.get_full_info_field(observation)
@@ -67,6 +69,7 @@ class LBF_GYM(Agent, Fruit):
             ca_map: terrain map (0=stone, 1=grass); stone cells become pathfinding obstacles.
         """
         previous_fruits = list(self.fruits) if self.fruits else []
+        self.any_fruit_loaded = False  # reset before record_ground_truth may set it
         self.get_full_info_field(observation)
         self.get_fruit_infos(food_growth)
         self.record_ground_truth(previous_fruits)
@@ -151,17 +154,17 @@ class LBF_GYM(Agent, Fruit):
         """Update agent state, known world, and pathfinding grids.
 
         For each agent: increments round counter, updates pathfinding grid, passes current
-        fruits/agents info. Dead agents only have position/level updated; cognition and
-        learning are skipped. Side effect: records NN training losses in
-        self.last_step_losses_per_agent.
+        fruits/agents info. Dead agents only have position/level updated; cognition is skipped.
+        Learning is NOT triggered here — it happens in agents_choose_actions() so the
+        updated weights are available immediately for the same-step reprediction.
 
         Args:
             new_player_infos: list of agent dicts with id, position, level, etc.
-            dead_agents: set of agent IDs that are dead; they skip cognition/learning.
+            dead_agents: set of agent IDs that are dead; they skip cognition.
             ca_map: terrain map passed to create_path_finding_grid.
 
         Returns:
-            None (updates agents and records losses as side effect)
+            None (updates agents as side effect)
         """
         dead_agents = dead_agents or set()
 
@@ -182,14 +185,13 @@ class LBF_GYM(Agent, Fruit):
             agent.level = new_player_info["level"]
 
             if id in dead_agents:
-                continue  # skip cognition and learning for dead agents
+                continue  # skip cognition for dead agents
 
             # pass information about the fruits and agents to the agent
             agent.known_fruits = self.fruits
             agent.process_agent_infos(self.agents)
             if agent.neural_network is None:
                 agent.init_neural_network()
-            self.last_step_losses_per_agent[agent.id] = agent.learn()
 
 
 
@@ -228,11 +230,16 @@ class LBF_GYM(Agent, Fruit):
 
     def agents_choose_actions(self, fallback_to_closest: bool = True,
                               dead_agents: set | None = None) -> list[np.int64]:
-        """Coordinate target selection and action planning for all agents.
+        """Coordinate learning, target selection, and action planning for all agents.
 
-        Dead agents immediately receive action 0 (no-op). For alive agents, calls
-        choose_fruit() for target selection, then optionally falls back to the closest
-        reachable fruit if no target was assigned.
+        When a fruit was loaded this step (any_fruit_loaded=True), each alive agent first
+        trains its NN on the newly labelled ground-truth predictions, then repredicts with
+        the updated weights. This makes the causal chain explicit:
+            fruit loaded → record_ground_truth labels predictions
+                         → agent.learn() updates NN
+                         → choose_fruit(force_reselect=True) repredicts
+
+        Dead agents immediately receive action 0 (no-op).
 
         Args:
             fallback_to_closest: if True, assign the closest reachable fruit when
@@ -249,7 +256,9 @@ class LBF_GYM(Agent, Fruit):
                 agent.last_action = np.int64(0)
                 actions.append(np.int64(0))
                 continue
-            agent.choose_fruit()
+            if self.any_fruit_loaded:
+                self.last_step_losses_per_agent[agent.id] = agent.learn()
+            agent.choose_fruit(force_reselect=self.any_fruit_loaded)
             if agent.target is None and fallback_to_closest:
                 agent.target = self._fallback_target(agent)
             if agent.target is None:
@@ -303,6 +312,8 @@ class LBF_GYM(Agent, Fruit):
             )
             if fruit_still_present:
                 continue
+
+            self.any_fruit_loaded = True
 
             adjacent_slots = [
                 prev_fruit.position + np.array([0, 1]),

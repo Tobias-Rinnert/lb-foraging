@@ -502,3 +502,72 @@ class TestComputeThreshold:
         q1 = float(np.percentile(probs, 25))
         result = agent._compute_threshold(probs, 4)
         assert result == pytest.approx(q1)
+
+
+class TestChooseFruitForceReselect:
+    """Tests for choose_fruit(force_reselect) — re-selection triggered when a fruit is loaded."""
+
+    def _make_agent_with_target(self, simple_grid, level, target_fruit, other_fruit):
+        """Helper: return an agent that already has target_fruit selected."""
+        agent = Agent(id=0, position=np.array([0, 0]), level=level)
+        agent.path_finding_grid = simple_grid
+        agent.known_agents = []
+        agent.known_fruits = [target_fruit, other_fruit]
+        agent.target = target_fruit
+        return agent
+
+    def test_no_reselect_when_target_present_and_no_fruit_loaded(self, simple_grid):
+        """Agent keeps its target when the fruit is still on the map and nothing was loaded."""
+        target = Fruit(position=np.array([2, 2]), level=1,
+                       free_slots=[np.array([2, 1])])
+        other = Fruit(position=np.array([4, 4]), level=2,
+                      free_slots=[np.array([4, 3])])
+        agent = self._make_agent_with_target(simple_grid, level=2,
+                                             target_fruit=target, other_fruit=other)
+
+        agent.choose_fruit(force_reselect=False)
+
+        assert np.array_equal(agent.target.position, target.position), (
+            "Target should be unchanged when fruit is present and force_reselect is False"
+        )
+
+    def test_reselect_triggered_by_force_reselect(self, simple_grid):
+        """force_reselect=True causes re-evaluation even if the current target still exists."""
+        target = Fruit(position=np.array([2, 2]), level=1,
+                       free_slots=[np.array([2, 1])])
+        other = Fruit(position=np.array([4, 4]), level=2,
+                      free_slots=[np.array([4, 3])])
+        agent = self._make_agent_with_target(simple_grid, level=2,
+                                             target_fruit=target, other_fruit=other)
+
+        agent.choose_fruit(force_reselect=True)
+
+        # Re-selection ran — a valid target must be set (may or may not be the same fruit)
+        assert agent.target is not None
+
+    def test_no_reselect_second_call_without_force(self, simple_grid):
+        """A second call with force_reselect=False and same target does not change anything."""
+        target = Fruit(position=np.array([2, 2]), level=1,
+                       free_slots=[np.array([2, 1])])
+        other = Fruit(position=np.array([4, 4]), level=2,
+                      free_slots=[np.array([4, 3])])
+        agent = self._make_agent_with_target(simple_grid, level=2,
+                                             target_fruit=target, other_fruit=other)
+
+        agent.choose_fruit(force_reselect=False)
+        agent.choose_fruit(force_reselect=False)
+
+        assert np.array_equal(agent.target.position, target.position)
+
+    def test_force_reselect_defaults_to_false(self, simple_grid):
+        """choose_fruit() with no argument behaves the same as force_reselect=False."""
+        target = Fruit(position=np.array([2, 2]), level=1,
+                       free_slots=[np.array([2, 1])])
+        other = Fruit(position=np.array([4, 4]), level=2,
+                      free_slots=[np.array([4, 3])])
+        agent = self._make_agent_with_target(simple_grid, level=2,
+                                             target_fruit=target, other_fruit=other)
+
+        agent.choose_fruit()  # no argument
+
+        assert np.array_equal(agent.target.position, target.position)

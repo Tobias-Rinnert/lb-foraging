@@ -297,7 +297,7 @@ class Agent:
 
     """Target selection"""
     
-    def choose_fruit(self) -> None:
+    def choose_fruit(self, force_reselect: bool = False) -> None:
         """Select a target fruit using conditional re-prediction and expected reward.
 
         Predictions persist across timesteps. Re-prediction only occurs when an agent deviates
@@ -305,11 +305,17 @@ class Agent:
         combinatorial expected reward via select_fruit_by_expected_reward().
 
         Steps:
-            1. Skip re-selection if current target is still on the map.
+            1. Skip re-selection if current target is still on the map and force_reselect is False.
+               force_reselect=True is passed whenever any fruit was loaded this step, which also
+               covers level-ups (agents that ate a fruit are now stronger and should re-evaluate).
             2. Build feasible fruit list (solo + cooperative).
             3. Invalidate stale predictions for fruits no longer on the map.
             4. For each other agent: skip NN call if still on predicted path, else re-predict.
             5. Select own target by expected reward.
+
+        Args:
+            force_reselect: when True, bypass the early-return even if the current target
+                is still on the map. Should be True whenever any fruit was loaded this step.
 
         Returns:
             None (sets self.target side effect)
@@ -320,13 +326,14 @@ class Agent:
             and np.any(np.all(self.target.position == fruit_positions, axis=1))
         )
 
-        if current_target_still_in_game:
+        if current_target_still_in_game and not force_reselect:
             return
 
         coop_levels = self.get_possible_coop_level_sums([agent["level"] for agent in self.known_agents])
+        max_achievable = int(max(coop_levels)) if len(coop_levels) > 0 else self.level
         feasible_fruits = [
             fruit for fruit in self.known_fruits
-            if fruit.level in coop_levels or fruit.level <= self.level
+            if fruit.level <= max_achievable
         ]
 
         # Invalidate predictions for fruits that are no longer on the map

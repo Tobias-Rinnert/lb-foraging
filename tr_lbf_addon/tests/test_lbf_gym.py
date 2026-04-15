@@ -485,3 +485,45 @@ class TestCaMapPathfinding:
         gym_inst = LBF_GYM(obs, ca_map=ca_map)
         for agent in gym_inst.agents:
             assert agent.path_finding_grid[2, 2] == 0
+
+
+class TestAnyFruitLoaded:
+    """Tests for the any_fruit_loaded flag — set when a fruit disappears between observations."""
+
+    def test_flag_false_initially(self):
+        """any_fruit_loaded starts False after construction."""
+        obs = make_observation()
+        gym_inst = LBF_GYM(obs)
+        assert gym_inst.any_fruit_loaded is False
+
+    def test_flag_set_when_fruit_disappears(self):
+        """any_fruit_loaded becomes True when a fruit present in the previous step is gone."""
+        obs_with_fruit = make_observation(fruit_positions=[(1, 3, 2)])
+        gym_inst = LBF_GYM(obs_with_fruit)
+
+        # Next observation: fruit is gone
+        obs_no_fruit = make_observation(fruit_positions=[])
+        gym_inst.update_observation(obs_no_fruit)
+
+        assert gym_inst.any_fruit_loaded is True
+
+    def test_flag_false_when_fruit_persists(self):
+        """any_fruit_loaded stays False when the same fruit is present in both observations."""
+        obs = make_observation(fruit_positions=[(1, 3, 2)])
+        gym_inst = LBF_GYM(obs)
+
+        gym_inst.update_observation(obs)
+
+        assert gym_inst.any_fruit_loaded is False
+
+    def test_flag_reset_on_subsequent_step_with_no_load(self):
+        """any_fruit_loaded resets to False on the next update if no fruit disappears."""
+        obs_with_fruit = make_observation(fruit_positions=[(1, 3, 2)])
+        gym_inst = LBF_GYM(obs_with_fruit)
+
+        obs_no_fruit = make_observation(fruit_positions=[])
+        gym_inst.update_observation(obs_no_fruit)
+        assert gym_inst.any_fruit_loaded is True  # fruit just loaded
+
+        gym_inst.update_observation(obs_no_fruit)  # still no fruit, nothing new loaded
+        assert gym_inst.any_fruit_loaded is False

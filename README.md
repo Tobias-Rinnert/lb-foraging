@@ -389,3 +389,5 @@ The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` f
 - evo leADS TO only one agent in game whoch cant load all fruits due to low lebel
 - stone and grass cells rarely appear and dont look good. needs more verification and better visuals
 - front end Viz of neural net architecture and editor for more intuitive and easier edits and for viz
+- final decision on which friot to choose should also just use teh agent predictor just for oneself. However there we can jump over teh inpu tlayer and use the prob of which agent chooses which fruit as an embedding somehow. something like this. 
+- in the end we want an architecture that can predict any action. SO then we use teh predictor to predict the probability for an action

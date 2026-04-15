@@ -296,7 +296,7 @@ The browser GUI renders the survival simulation in real time.
 
 ### Terrain
 
-Stone cells are drawn in dark grey, grass cells in a faint green tint. Growing fruits (food_growth < 1.0) show a fading green overlay on their grass cell, getting brighter as they approach ripeness.
+Both cell types use a diagonal gradient (top-left light source) plus bevel edges for a 3D raised-tile look. Stone cells shade from light grey (#A8A8A8) to dark grey (#505050); grass cells shade from light green (#6DBF71) to dark green (#235E27). Bevel edges are skipped below 6 px cell size. Growing fruits (food_growth < 1.0) show a light-green brightening overlay on their grass cell that strengthens as they approach ripeness.
 
 ### Agent Status
 

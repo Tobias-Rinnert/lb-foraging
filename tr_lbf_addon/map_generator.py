@@ -1,7 +1,9 @@
-"""Cellular automata terrain generator for the survival simulation.
+"""Terrain generator for the survival simulation.
 
-Generates a binary terrain map of stone (0) and grass (1) cells using
-cellular automata smoothing to produce natural-looking cave/island shapes.
+Generates a binary terrain map of stone (0) and grass (1) cells.
+Uses continuous noise smoothed by a box filter, then thresholded at
+``grass_ratio``, so the output grass fraction stays close to the requested
+value regardless of the number of smoothing passes.
 """
 
 import numpy as np
@@ -13,16 +15,22 @@ def generate_ca_map(
     smooth_iterations: int = 5,
     seed: int | None = None,
 ) -> np.ndarray:
-    """Generate a terrain map using cellular automata smoothing.
+    """Generate a terrain map with spatially-smoothed noise.
 
-    Initialises each cell randomly as grass with probability `grass_ratio`,
-    then repeatedly smooths: a cell becomes grass if at least 50% of its
-    3x3 neighbourhood is grass, otherwise stone.
+    Initialises each cell with a uniform random value in [0, 1), then
+    repeatedly blurs the noise with a 3x3 box filter (edge-padded).
+    Finally, cells whose smoothed value falls below ``grass_ratio`` become
+    grass (1); the rest become stone (0).
+
+    Because the threshold is applied *after* smoothing a continuous signal,
+    the output grass fraction tracks ``grass_ratio`` closely regardless of
+    how many smoothing passes are applied — unlike a binary majority-vote CA,
+    which amplifies the dominant state and converges to 0% or 100%.
 
     Args:
         field_size: width and height of the square grid
-        grass_ratio: probability of a cell starting as grass (default 0.70)
-        smooth_iterations: number of CA smoothing passes (default 5)
+        grass_ratio: fraction of cells that should be grass (default 0.70)
+        smooth_iterations: number of box-filter smoothing passes (default 5)
         seed: random seed for reproducibility (default None)
 
     Returns:
@@ -30,18 +38,15 @@ def generate_ca_map(
         Values: 0 = stone, 1 = grass.
     """
     rng = np.random.default_rng(seed)
-    grid = (rng.random((field_size, field_size)) < grass_ratio).astype(np.int8)
+    noise = rng.random((field_size, field_size))
 
     for _ in range(smooth_iterations):
-        new_grid = np.empty_like(grid)
-        for row in range(field_size):
-            for col in range(field_size):
-                r0, r1 = max(0, row - 1), min(field_size, row + 2)
-                c0, c1 = max(0, col - 1), min(field_size, col + 2)
-                neighbourhood = grid[r0:r1, c0:c1]
-                grass_count = neighbourhood.sum()
-                total_count = neighbourhood.size
-                new_grid[row, col] = np.int8(1) if grass_count * 2 >= total_count else np.int8(0)
-        grid = new_grid
+        padded = np.pad(noise, 1, mode="edge")
+        windows = np.lib.stride_tricks.sliding_window_view(padded, (3, 3))
+        noise = windows.mean(axis=(-2, -1))
 
-    return grid
+    # Use percentile thresholding so the output grass fraction equals
+    # grass_ratio exactly, regardless of how much smoothing compressed the
+    # noise distribution toward its mean.
+    threshold = np.percentile(noise, grass_ratio * 100)
+    return (noise <= threshold).astype(np.int8)

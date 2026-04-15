@@ -28,6 +28,7 @@ export interface GameParams {
   max_player_level: number;
   min_food_level: number;
   max_food_level: number;
+  min_level_1_food: number;
   penalty: number;
   normalize_reward: boolean;
   observe_agent_levels: boolean;

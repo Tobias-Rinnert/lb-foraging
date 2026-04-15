@@ -192,6 +192,85 @@ def test_partial_obs_3(simple2p1f):
     assert obs[1][-2] > -1
 
 
+def test_no_food_or_player_on_stone_cells():
+    """Fruits and players never spawn on stone cells (ca_map == 0)."""
+    env = gym.make("Foraging-8x8-3p-3f-v3")
+    # Build a ca_map that marks every cell as stone except a 4x4 centre patch
+    ca_map = np.zeros((8, 8), dtype=np.int32)
+    ca_map[2:6, 2:6] = 1  # only the centre 4x4 is grass
+    env.unwrapped.ca_map = ca_map
+    for _ in range(20):
+        env.reset()
+        stone_positions = list(zip(*np.where(ca_map == 0)))
+        for row, col in stone_positions:
+            assert env.unwrapped.field[row, col] == 0, f"Food found on stone cell ({row},{col})"
+        for player in env.unwrapped.players:
+            r, c = player.position
+            assert ca_map[r, c] == 1, f"Player spawned on stone cell ({r},{c})"
+
+
+def test_players_start_at_level_1():
+    """After reset, every player starts at level 1 regardless of min/max_player_level."""
+    env = gym.make("Foraging-8x8-3p-1f-v3")
+    for _ in range(5):
+        env.reset()
+        for player in env.unwrapped.players:
+            assert player.level == 1, f"Expected level 1, got {player.level}"
+
+
+def test_level_up_on_eat():
+    """Each agent that successfully loads a fruit gains exactly one level."""
+    env = gym.make("Foraging-8x8-2p-1f-v3")
+    env.reset()
+    env.unwrapped.field[:] = 0
+    env.unwrapped.field[4, 4] = 1
+    env.unwrapped._food_spawned = env.unwrapped.field.sum()
+    env.unwrapped.players[0].position = (4, 3)
+    env.unwrapped.players[0].level = 1
+    env.unwrapped.players[1].position = (0, 0)
+    env.unwrapped.players[1].level = 1
+    env.unwrapped.test_gen_valid_moves()
+
+    env.step([Action.LOAD, Action.NONE])
+
+    assert env.unwrapped.players[0].level == 2, "Loading agent should level up to 2"
+    assert env.unwrapped.players[1].level == 1, "Non-loading agent should stay at 1"
+
+
+def test_level_up_capped_at_max_player_level():
+    """Agent level does not exceed max_player_level after eating."""
+    env = gym.make("Foraging-8x8-2p-1f-v3")
+    env.reset()
+    env.unwrapped.field[:] = 0
+    env.unwrapped.field[4, 4] = 1
+    env.unwrapped._food_spawned = env.unwrapped.field.sum()
+    max_level = int(max(env.unwrapped.max_player_level))
+    env.unwrapped.players[0].position = (4, 3)
+    env.unwrapped.players[0].level = max_level
+    env.unwrapped.players[1].position = (0, 0)
+    env.unwrapped.players[1].level = 1
+    env.unwrapped.test_gen_valid_moves()
+
+    env.step([Action.LOAD, Action.NONE])
+
+    assert env.unwrapped.players[0].level == max_level, "Level must not exceed max_player_level"
+
+
+def test_level_1_food_guaranteed():
+    """After reset, at least min_level_1_food fruits have level 1."""
+    env = gym.make("Foraging-8x8-2p-3f-v3")
+    for _ in range(100):
+        env.reset()
+        fruit_levels = [
+            env.unwrapped.field[r, c]
+            for r, c in zip(*env.unwrapped.field.nonzero())
+        ]
+        level_1_count = sum(1 for lvl in fruit_levels if lvl == 1)
+        assert level_1_count >= env.unwrapped.min_level_1_food, (
+            f"Expected >= {env.unwrapped.min_level_1_food} level-1 fruits, got {level_1_count}"
+        )
+
+
 def test_reproducibility(simple2p1f):
     env = simple2p1f
     episodes_per_seed = 5

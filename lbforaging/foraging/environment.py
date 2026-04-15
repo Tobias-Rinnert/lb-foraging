@@ -95,9 +95,13 @@ class ForagingEnv(gym.Env):
         observe_agent_levels=True,
         penalty=0.0,
         render_mode=None,
-        full_info_mode=True
+        full_info_mode=True,
+        min_level_1_food=2,  ### ADD ON from Tobias Rinnert — guarantees level-1 food at episode start
     ):
         self.logger = logging.getLogger(__name__)
+        self.min_level_1_food = min_level_1_food  ### ADD ON from Tobias Rinnert
+        "Minimum number of level-1 fruits guaranteed to be present at episode start"
+        self.ca_map = None  ### ADD ON from Tobias Rinnert — terrain map (0=stone, 1=grass); set externally before reset() to block fruit/player spawning on stone cells
         self.render_mode = render_mode
         self.players = [Player(id) for id in range(players)] ### Altered by Tobias Rinnert to introduce a fixed player id for referencing
 
@@ -387,7 +391,8 @@ class ForagingEnv(gym.Env):
         for a in self.players:
             if a.position and row == a.position[0] and col == a.position[1]:
                 return False
-
+        if self.ca_map is not None and self.ca_map[row, col] == 0:  ### ADD ON from Tobias Rinnert — stone cells are never valid spawn locations
+            return False
         return True
 
     def spawn_players(self, min_player_levels, max_player_levels):
@@ -407,7 +412,7 @@ class ForagingEnv(gym.Env):
                 if self._is_empty_location(row, col):
                     player.setup(
                         (row, col),
-                        self.np_random.integers(min_player_level, max_player_level + 1),
+                        1,  ### Altered by Tobias Rinnert — agents always start at level 1; level-up is earned by eating
                         self.field_size,
                     )
                     break
@@ -625,6 +630,19 @@ class ForagingEnv(gym.Env):
             if self.max_food_level is not None
             else np.array([sum(player_levels[:3])] * self.max_num_food),
         )
+
+        ### ADD ON from Tobias Rinnert — guarantee that at least min_level_1_food fruits have level 1
+        # so new (level-1) agents always have something they can eat without needing cooperation.
+        fruit_positions = list(zip(*self.field.nonzero()))
+        level_1_shortage = self.min_level_1_food - sum(
+            1 for r, c in fruit_positions if self.field[r, c] == 1
+        )
+        if level_1_shortage > 0:
+            non_level_1 = [(r, c) for r, c in fruit_positions if self.field[r, c] != 1]
+            for r, c in non_level_1[:level_1_shortage]:
+                self.field[r, c] = 1
+            self._food_spawned = self.field.sum()
+
         self.current_step = 0
         self._game_over = False
         self._gen_valid_moves()
@@ -713,12 +731,14 @@ class ForagingEnv(gym.Env):
                 continue
 
             # else the food was loaded and each player scores points
+            max_level = int(max(self.max_player_level))
             for a in adj_players:
                 a.reward = float(a.level * food_level)
                 if self._normalize_reward:
                     a.reward = a.reward / float(
                         adj_player_level * self._food_spawned
                     )  # normalize reward
+                a.level = min(a.level + 1, max_level)  ### Altered by Tobias Rinnert — level-up on successful food load
             # and the food is removed
             self.field[frow, fcol] = 0
 

@@ -45,6 +45,10 @@ The `lbforaging/` directory is a slightly modified fork of the original environm
 - Added agent IDs for tracking
 - Added `full_info_mode` to get all information from the observation conveniently
 - Changed collision logic: when two agents want the same cell, one fails randomly while the other succeeds
+- Changed agent spawn to always start at level 1 (was random between `min_player_level` and `max_player_level`)
+- Added level-up mechanic: every agent that participates in a successful food load gains +1 level (capped at `max_player_level`)
+- Added `min_level_1_food` parameter (default 2): after `spawn_food`, forces at least that many fruits to level 1 so level-1 agents always have accessible food
+- Added `ca_map` attribute to `ForagingEnv`: when set externally before `reset()`, `_is_empty_location` rejects stone cells (`ca_map == 0`) so fruits and players never spawn on impassable terrain
 
 ## How a Simulation Step Works
 
@@ -306,9 +310,17 @@ Each agent displays a hunger bar below its sprite. The bar fills from green (0 h
 
 The frame payload carries `population_size` (current alive agents) and `next_population_size` (children ready for next episode), exposed for overlay display.
 
+### Agent Levelling
+
+Agents always start at **level 1** on episode reset. Each time an agent successfully loads a fruit (alone or cooperatively), its level increases by 1, up to `max_player_level`. This makes early-episode food availability critical — see `min_level_1_food` below.
+
 ### Survival & Evolution Settings
 
-The settings panel has a new **Survival & Evolution** section with all 7 survival parameters. Float inputs support fine-grained editing with configurable step sizes. Changes take effect on the next **Apply & Restart**.
+The settings panel has a new **Survival & Evolution** section with all survival parameters. Float inputs support fine-grained editing with configurable step sizes. Changes take effect on the next **Apply & Restart**.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `min_level_1_food` | 2 | Minimum number of level-1 fruits guaranteed at episode start so level-1 agents always have something to eat |
 
 ### End-to-End Flow
 

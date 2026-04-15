@@ -41,6 +41,7 @@ const SECTIONS: { title: string; fields: FieldDef[] }[] = [
       { label: "Max food", key: "max_num_food", type: "spin", min: 1, max: 30, tooltip: "Maximum number of food items spawned per episode" },
       { label: "Min level", key: "min_food_level", type: "spin", min: 1, max: 5, tooltip: "Lowest possible food level. Agents need combined level >= food level to collect" },
       { label: "Max level", key: "max_food_level", type: "spin", min: 1, max: 5, tooltip: "Highest possible food level" },
+      { label: "Min level-1 food", key: "min_level_1_food", type: "spin", min: 0, max: 20, tooltip: "Minimum number of level-1 fruits guaranteed at episode start so new agents always have accessible food" },
     ],
   },
   {

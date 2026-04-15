@@ -59,6 +59,7 @@ def default_params() -> dict:
         "full_info_mode": True,
         "fallback_to_closest": False,
         # Survival & evolution
+        "min_level_1_food": 2,
         "hunger_rate": 0.001,
         "food_growth_rate": 0.005,
         "foods_per_child": 3,
@@ -141,14 +142,18 @@ class GameRunner:
         """
         self.params["number_players"] = self._next_player_count
         self._rebuild_env_if_player_count_changed()
-        self.observation, _ = self.env.reset(seed=None)
 
+        # Generate terrain before env.reset() so spawn_food / spawn_players can
+        # exclude stone cells via env.ca_map inside _is_empty_location.
         if self.ca_map is None:
             self.ca_map = generate_ca_map(
                 self.params["field_size"],
                 grass_ratio=self.params.get("grass_ratio", 0.70),
                 smooth_iterations=self.params.get("ca_smooth_iterations", 5),
             )
+        self.env.unwrapped.ca_map = self.ca_map
+
+        self.observation, _ = self.env.reset(seed=None)
 
         self.lbf_gym = LBF_GYM(self.observation[0], ca_map=self.ca_map)
         for agent in self.lbf_gym.agents:
@@ -368,6 +373,7 @@ class GameRunner:
                 "penalty": p["penalty"],
                 "render_mode": None,
                 "full_info_mode": p["full_info_mode"],
+                "min_level_1_food": p["min_level_1_food"],
             },
         )
         self.env = gym.make(env_id, disable_env_checker=True)

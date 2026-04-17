@@ -397,6 +397,84 @@ class TestFoodGrowthFilter:
         assert len(gym_inst.fruits) == 2
 
 
+class TestFreeSlotsFilter:
+    """Tests for stone-cell and out-of-bounds filtering in get_fruit_infos free_slots.
+
+    Stones live in ca_map (not full_info_field) and are impassable in the pathfinding
+    grid. If they leak into free_slots the agent targets an unreachable slot, A* fails,
+    the target clears, and the agent re-selects the same fruit next step → stuck loop.
+    """
+
+    def test_stone_slot_excluded_from_free_slots(self):
+        """A stone cell adjacent to a fruit is NOT listed as a free slot."""
+        obs = make_observation(
+            players=[{"id": 0, "position": (0, 0), "level": 1}],
+            fruit_positions=[(2, 2, 2)],
+        )
+        ca_map = np.ones((5, 5), dtype=np.int8)
+        ca_map[2, 1] = 0  # stone directly left of the fruit
+        gym_inst = LBF_GYM(obs, ca_map=ca_map)
+        fruit = next(f for f in gym_inst.fruits if tuple(f.position) == (2, 2))
+        for slot in fruit.free_slots:
+            assert not np.array_equal(slot, np.array([2, 1])), (
+                "Stone cells must be excluded from free_slots"
+            )
+
+    def test_all_stones_adjacent_yields_empty_free_slots(self):
+        """Fruit surrounded by stones has no free slots."""
+        obs = make_observation(
+            players=[{"id": 0, "position": (0, 0), "level": 1}],
+            fruit_positions=[(2, 2, 2)],
+        )
+        ca_map = np.ones((5, 5), dtype=np.int8)
+        ca_map[2, 1] = ca_map[2, 3] = ca_map[1, 2] = ca_map[3, 2] = 0
+        gym_inst = LBF_GYM(obs, ca_map=ca_map)
+        fruit = next(f for f in gym_inst.fruits if tuple(f.position) == (2, 2))
+        assert fruit.free_slots == []
+
+    def test_grass_slot_remains_free(self):
+        """A grass cell adjacent to a fruit remains in free_slots."""
+        obs = make_observation(
+            players=[{"id": 0, "position": (0, 0), "level": 1}],
+            fruit_positions=[(2, 2, 2)],
+        )
+        ca_map = np.ones((5, 5), dtype=np.int8)
+        ca_map[2, 1] = 0  # one stone
+        gym_inst = LBF_GYM(obs, ca_map=ca_map)
+        fruit = next(f for f in gym_inst.fruits if tuple(f.position) == (2, 2))
+        # (2, 3), (1, 2), (3, 2) should all still be free
+        slot_tuples = [tuple(s) for s in fruit.free_slots]
+        assert (2, 3) in slot_tuples
+        assert (1, 2) in slot_tuples
+        assert (3, 2) in slot_tuples
+
+    def test_edge_fruit_does_not_wrap_around(self):
+        """A fruit at column 0 does not list column-(-1) (=last column) as a free slot."""
+        # Agent far away so its presence doesn't obscure anything
+        obs = make_observation(
+            players=[{"id": 0, "position": (4, 4), "level": 1}],
+            fruit_positions=[(2, 0, 2)],
+        )
+        gym_inst = LBF_GYM(obs)
+        fruit = next(f for f in gym_inst.fruits if tuple(f.position) == (2, 0))
+        for slot in fruit.free_slots:
+            # column index must be within grid bounds
+            assert 0 <= slot[1] < 5
+            # specifically, the wrap-around cell (2, 4) must not appear
+            assert not np.array_equal(slot, np.array([2, 4]))
+
+    def test_corner_fruit_has_only_in_bounds_slots(self):
+        """A fruit at (0, 0) has exactly 2 valid adjacent slots: (0, 1) and (1, 0)."""
+        obs = make_observation(
+            players=[{"id": 0, "position": (4, 4), "level": 1}],
+            fruit_positions=[(0, 0, 2)],
+        )
+        gym_inst = LBF_GYM(obs)
+        fruit = next(f for f in gym_inst.fruits if tuple(f.position) == (0, 0))
+        slot_tuples = {tuple(s) for s in fruit.free_slots}
+        assert slot_tuples == {(0, 1), (1, 0)}
+
+
 class TestDeadAgents:
     """Tests for dead agent handling in update_agents and agents_choose_actions."""
 

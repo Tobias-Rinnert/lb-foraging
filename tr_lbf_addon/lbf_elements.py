@@ -223,6 +223,22 @@ class Agent:
         if not self.is_alive:
             return np.int64(0)
 
+        # Check adjacency BEFORE consulting free_slots.
+        #
+        # free_slots only lists EMPTY adjacent cells (full_info_field == 0).
+        # The moment an agent occupies a loading slot its cell becomes non-zero,
+        # so it drops out of free_slots. Without this guard the slot-selection
+        # logic below picks the closest *remaining* free slot and navigates the
+        # agent away from the fruit instead of issuing LOAD.
+        fruit_adjacent = [
+            self.target.position + np.array([0, 1]),
+            self.target.position + np.array([0, -1]),
+            self.target.position + np.array([1, 0]),
+            self.target.position + np.array([-1, 0]),
+        ]
+        if any(np.array_equal(self.position, slot) for slot in fruit_adjacent):
+            return self.action_string_to_int("load")
+
         if not self.target.free_slots:
             self.target = None  # force re-selection next step
             return np.int64(0)
@@ -234,16 +250,23 @@ class Agent:
             self.target = None  # all slots taken, try a different fruit next step
             return np.int64(0)
 
-        # pick the closest unoccupied slot
-        self.path_goal = min(available_slots, key=lambda x: np.linalg.norm(x - self.position))
+        # Try slots in order of euclidean distance; take the first one A* can reach.
+        # Single closest-slot selection breaks when the closest slot is on the far side
+        # of a loading agent or a narrow stone corridor — the path fails, the target
+        # gets cleared, then the next step reselects the same fruit and picks the same
+        # unreachable slot again. Iterating gives the agent a chance to route around.
+        sorted_slots = sorted(available_slots,
+                              key=lambda x: np.linalg.norm(x - self.position))
+        self.path_goal = None
+        self.current_path = None
+        for slot in sorted_slots:
+            path = self.get_path(self.position, slot)
+            if path is not None:
+                self.path_goal = slot
+                self.current_path = path
+                break
 
-        # if the current position is the current_path_goal, the player is going to load
-        if np.all(self.position == self.path_goal):
-            return self.action_string_to_int("load")
-
-        self.current_path = self.get_path(self.position, self.path_goal)
-
-        # no path found, force re-selection next step rather than idling permanently
+        # no reachable slot — force re-selection next step rather than idling permanently
         if self.current_path is None:
             self.target = None
             return np.int64(0)

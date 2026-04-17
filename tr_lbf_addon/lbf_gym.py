@@ -48,7 +48,7 @@ class LBF_GYM(Agent, Fruit):
         # get the full info field
         self.get_full_info_field(observation)
         # get the positions and level of the fruit
-        self.get_fruit_infos()
+        self.get_fruit_infos(ca_map=ca_map)
         # get the player infos
         self.initialize_agents(observation["player_infos"], ca_map)
 
@@ -71,7 +71,7 @@ class LBF_GYM(Agent, Fruit):
         previous_fruits = list(self.fruits) if self.fruits else []
         self.any_fruit_loaded = False  # reset before record_ground_truth may set it
         self.get_full_info_field(observation)
-        self.get_fruit_infos(food_growth)
+        self.get_fruit_infos(food_growth, ca_map=ca_map)
         self.record_ground_truth(previous_fruits)
         self.update_agents(observation["player_infos"], dead_agents, ca_map)
 
@@ -91,20 +91,30 @@ class LBF_GYM(Agent, Fruit):
         self.full_info_field =  field
 
 
-    def get_fruit_infos(self, food_growth: dict | None = None) -> None:
+    def get_fruit_infos(self, food_growth: dict | None = None,
+                        ca_map: np.ndarray | None = None) -> None:
         """Extract fruit positions and levels from the full info field.
 
         Identifies positive values (fruits) in the field, computes their free loading slots
         (adjacent walkable positions), and stores as Fruit objects in self.fruits.
         Fruits with food_growth < 1.0 are hidden (still growing) and excluded.
 
+        A slot is considered "free" only if it is (1) inside the grid, (2) empty in
+        full_info_field (no player or fruit), and (3) not a stone cell in ca_map. Stones
+        are obstacles in the pathfinding grid so listing a stone as a free slot would
+        make the fruit appear loadable while its slot is unreachable — agents target it,
+        pathfinding fails, target clears, they retarget the same fruit → stuck forever.
+
         Args:
             food_growth: dict mapping tuple(row, col) to float in [0, 1]. Fruits not yet
                 at 1.0 are skipped (hidden from agents). If None, all fruits are visible.
+            ca_map: terrain map (0=stone, 1=grass). Stone cells are excluded from free
+                slots. If None, terrain is ignored.
 
         Returns:
             None (sets self.fruits side effect)
         """
+        rows, cols = self.full_info_field.shape
         fruit_posisitions = np.where(self.full_info_field > 0)
         fruit_posisitions = list(zip(fruit_posisitions[0], fruit_posisitions[1]))
         fruit_posisitions = [np.array(pos) for pos in fruit_posisitions]
@@ -117,8 +127,16 @@ class LBF_GYM(Agent, Fruit):
                               fruit_pos + np.array([0, -1]),
                               fruit_pos + np.array([1, 0]),
                               fruit_pos + np.array([-1, 0])]
+            # drop out-of-bounds slots (numpy would otherwise wrap negative indices
+            # to the far edge of the grid, manufacturing phantom "free slots")
+            load_slots = [s for s in load_slots
+                          if 0 <= s[0] < rows and 0 <= s[1] < cols]
             # get the free slots around the fruit
-            free_slots = [slot for slot in load_slots if self.full_info_field[tuple(slot)] == 0]
+            free_slots = [slot for slot in load_slots
+                          if self.full_info_field[tuple(slot)] == 0]
+            # exclude stone cells — they're unwalkable in the pathfinding grid
+            if ca_map is not None:
+                free_slots = [slot for slot in free_slots if ca_map[tuple(slot)] != 0]
             # create the fruit
             fruit = Fruit(position=fruit_pos,
                           level=self.full_info_field[*fruit_pos],

@@ -223,6 +223,63 @@ class TestChooseNextAction:
         # closest free slot to (0,2) is (1,2)
         assert np.array_equal(agent.path_goal, np.array([1, 2]))
 
+    def test_falls_back_to_next_slot_when_closest_unreachable(self, agent, grid_with_obstacle):
+        """If the closest free slot is unreachable, the agent picks the next reachable one.
+
+        Regression: with a single closest-slot selection the agent targeted the closest
+        slot by euclidean distance, and if a wall or loading agent made it unreachable
+        the target got cleared and the same slot was picked again next step → stuck.
+        The agent must iterate slots in distance order and pick the first one A* can reach.
+        """
+        # 5x5 grid with obstacle at (2, 2). Build a row of obstacles cutting the grid
+        # in half so the "closest" slot is on the unreachable side.
+        grid = np.ones((5, 5))
+        grid[1, :3] = 0  # wall across row 1, columns 0-2
+        agent.path_finding_grid = grid
+        agent.position = np.array([2, 0])
+        # fruit at (0, 2) — its closest slot to the agent is (1, 2), behind the wall.
+        # (0, 1) and (0, 3) are reachable via a detour; but with the wall, only (0, 3)
+        # and (1, 3) are reachable (the agent goes around column 2+).
+        fruit = Fruit(
+            position=np.array([0, 2]),
+            level=1,
+            free_slots=[
+                np.array([1, 2]),   # closest to (2, 0) — BLOCKED by wall
+                np.array([0, 1]),   # also blocked on this side of the wall
+                np.array([0, 3]),   # reachable via (2,3) -> (1,3) -> (0,3)
+            ],
+        )
+        agent.target = fruit
+        # agent must pick a walking action (not 0, not LOAD), proving it found *some*
+        # reachable slot instead of clearing the target
+        action = agent.choose_next_action()
+        assert action in (np.int64(1), np.int64(2), np.int64(3), np.int64(4)), (
+            f"Agent must walk toward a reachable slot, got action {action}"
+        )
+        assert agent.target is fruit, "Target must not be cleared when any slot is reachable"
+
+    def test_load_when_adjacent_but_slot_not_in_free_slots(self, agent):
+        """Agent at an adjacent slot not listed in free_slots still returns LOAD.
+
+        In real game conditions free_slots only contains EMPTY adjacent cells.
+        Once the agent occupies a slot, that cell becomes non-zero in full_info_field
+        and is dropped from free_slots. The adjacency pre-check must fire before the
+        free_slots guard so the agent issues LOAD rather than navigating away.
+        """
+        # fruit at (2, 2); agent at (2, 3) — an adjacent loading slot
+        agent.position = np.array([2, 3])
+        fruit = Fruit(
+            position=np.array([2, 2]),
+            level=1,
+            # (2,3) is intentionally absent — simulates real-game occupied-slot state
+            free_slots=[np.array([2, 1]), np.array([3, 2]), np.array([1, 2])],
+        )
+        agent.target = fruit
+        action = agent.choose_next_action()
+        assert action == np.int64(5), (
+            "Agent at a loading slot must issue LOAD even if that slot is absent from free_slots"
+        )
+
 
 # ── process_agent_infos ──────────────────────────────────────────────
 

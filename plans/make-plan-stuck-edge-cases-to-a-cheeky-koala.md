@@ -588,7 +588,7 @@ Update the existing project_state memory with a one-line bump per fix and the ne
 - Docs: [README.md](README.md) — add `### Agent Behavior Fixes` under `## Changes to LBF`
 - Memory: `C:/Users/bobis/.claude/projects/C--Users-bobis-development-lb-foraging/memory/project_state.md`
 
-# Haiku Self-Check Before Finishing
+# Self-Check Before Finishing
 
 - [ ] Every `Edit` call used a unique `old_string` (copy-pasted verbatim from current file, not this plan if the file differs — re-Read if uncertain).
 - [ ] No new comments explaining WHAT the code does; only the WHY comments already shown.

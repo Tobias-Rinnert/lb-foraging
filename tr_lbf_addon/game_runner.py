@@ -228,10 +228,12 @@ class GameRunner:
         for pos in new_fruit_positions - old_positions:
             self.food_growth[pos] = 0.0  # new fruit, starts growing
 
+        # Fruits can only spawn on grass (enforced by environment._is_empty_location
+        # against ca_map at spawn time) and stones never turn to grass mid-episode,
+        # so we can grow every tracked fruit unconditionally.
         food_growth_rate = self.params.get("food_growth_rate", 0.005)
         for pos in new_fruit_positions & old_positions:
-            if self.ca_map is None or self.ca_map[pos] == 1:  # grass cell
-                self.food_growth[pos] = min(1.0, self.food_growth[pos] + food_growth_rate)
+            self.food_growth[pos] = min(1.0, self.food_growth[pos] + food_growth_rate)
 
         # Eating: reset hunger and count food for agents that received reward
         for agent, r in zip(self.lbf_gym.agents, self.rewards):

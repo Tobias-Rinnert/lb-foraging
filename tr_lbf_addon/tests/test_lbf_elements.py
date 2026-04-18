@@ -280,6 +280,52 @@ class TestChooseNextAction:
             "Agent at a loading slot must issue LOAD even if that slot is absent from free_slots"
         )
 
+    def test_walking_agent_on_slot_does_not_clear_target(self, agent, fruit_with_free_slots):
+        """A walking (non-loading) agent occupying the closest slot keeps target set."""
+        agent.position = np.array([0, 0])
+        agent.target = fruit_with_free_slots
+        agent.known_agents = [{
+            "id": 1,
+            "position": np.array([2, 3]),  # one of fruit_with_free_slots's free slots
+            "level": 1,
+            "position_history": [],
+            "last_action": 0,
+            "is_loading": False,
+        }]
+        action = agent.choose_next_action()
+        assert agent.target is fruit_with_free_slots
+        assert action != np.int64(0)  # a movement, not idle
+
+    def test_loading_agent_on_slot_excluded_from_available(self, agent, fruit_with_free_slots):
+        """A loading agent on the closest slot routes the focal agent to a different slot."""
+        agent.position = np.array([0, 0])
+        agent.target = fruit_with_free_slots
+        agent.known_agents = [{
+            "id": 1,
+            "position": np.array([2, 3]),
+            "level": 1,
+            "position_history": [],
+            "last_action": 0,
+            "is_loading": True,
+        }]
+        action = agent.choose_next_action()
+        assert agent.target is fruit_with_free_slots
+        # path_goal must not be the blocked slot
+        assert not np.array_equal(agent.path_goal, np.array([2, 3]))
+
+    def test_all_slots_held_by_loading_agents_clears_target(self, agent, fruit_with_free_slots):
+        """If every free_slot is occupied by a loading agent, target clears."""
+        agent.position = np.array([0, 0])
+        agent.target = fruit_with_free_slots
+        agent.known_agents = [
+            {"id": i + 1, "position": np.array(slot), "level": 1,
+             "position_history": [], "last_action": 0, "is_loading": True}
+            for i, slot in enumerate(fruit_with_free_slots.free_slots)
+        ]
+        action = agent.choose_next_action()
+        assert agent.target is None
+        assert action == np.int64(0)
+
 
 # ── process_agent_infos ──────────────────────────────────────────────
 
@@ -629,6 +675,28 @@ class TestChooseFruitForceReselect:
 
         assert np.array_equal(agent.target.position, target.position)
 
+    def test_empty_known_fruits_clears_target_without_crash(self, simple_grid):
+        """Empty known_fruits must clear the target and not raise."""
+        stale = Fruit(position=np.array([2, 2]), level=1, free_slots=[np.array([2, 3])])
+        agent = Agent(id=0, position=np.array([0, 0]), level=2)
+        agent.path_finding_grid = simple_grid
+        agent.target = stale
+        agent.known_fruits = []
+        agent.known_agents = []
+        agent.choose_fruit()
+        assert agent.target is None
+
+    def test_empty_known_fruits_with_force_reselect(self, simple_grid):
+        """Force-reselect path also handles empty known_fruits cleanly."""
+        stale = Fruit(position=np.array([2, 2]), level=1, free_slots=[np.array([2, 3])])
+        agent = Agent(id=0, position=np.array([0, 0]), level=2)
+        agent.path_finding_grid = simple_grid
+        agent.target = stale
+        agent.known_fruits = []
+        agent.known_agents = []
+        agent.choose_fruit(force_reselect=True)
+        assert agent.target is None
+
 
 class TestChooseFruitStuckReselect:
     """Tests for choose_fruit() stuck-triggered re-evaluation via _stationary_steps."""
@@ -699,3 +767,87 @@ class TestChooseFruitStuckReselect:
         agent.choose_fruit()            # _stationary_steps=0 → early return
 
         assert agent.target is original_target
+
+
+class TestChooseFruitFreeSlots:
+    """choose_fruit must exclude fruits with no free slots from feasible_fruits (issue 2)."""
+
+    def test_fruit_without_free_slots_excluded_from_feasible(self, agent):
+        """choose_fruit ignores fruits whose free_slots list is empty."""
+        blocked = Fruit(position=np.array([1, 1]), level=1, free_slots=[])
+        reachable = Fruit(position=np.array([3, 3]), level=1,
+                          free_slots=[np.array([3, 4])])
+        agent.known_fruits = [blocked, reachable]
+        agent.known_agents = []
+        agent.choose_fruit(force_reselect=True)
+        assert agent.target is reachable
+
+    def test_all_fruits_without_free_slots_yields_none_target(self, agent):
+        """When every known fruit is blocked, target becomes None."""
+        blocked_a = Fruit(position=np.array([1, 1]), level=1, free_slots=[])
+        blocked_b = Fruit(position=np.array([3, 3]), level=1, free_slots=[])
+        agent.known_fruits = [blocked_a, blocked_b]
+        agent.known_agents = []
+        agent.choose_fruit(force_reselect=True)
+        assert agent.target is None
+
+    def test_previously_blocked_fruit_selectable_after_slots_free_up(self, agent):
+        """A fruit whose slots reopen must be eligible on the next choose_fruit call."""
+        fruit = Fruit(position=np.array([2, 2]), level=1, free_slots=[])
+        agent.known_fruits = [fruit]
+        agent.known_agents = []
+        agent.choose_fruit(force_reselect=True)
+        assert agent.target is None
+
+        fruit.free_slots = [np.array([2, 3])]
+        agent.choose_fruit(force_reselect=True)
+        assert agent.target is fruit
+
+
+class TestDeadAgentFiltering:
+    """Dead agents must be excluded from cognition subsystems (issue 3)."""
+
+    def test_dead_agent_excluded_from_known_agents(self, simple_grid):
+        """process_agent_infos drops agents whose is_alive is False."""
+        focal = Agent(id=0, position=np.array([0, 0]), level=1)
+        focal.path_finding_grid = simple_grid
+        alive = Agent(id=1, position=np.array([1, 1]), level=2)
+        dead = Agent(id=2, position=np.array([2, 2]), level=3)
+        dead.is_alive = False
+        focal.process_agent_infos([focal, alive, dead])
+        ids = {a["id"] for a in focal.known_agents}
+        assert ids == {1}
+
+    def test_dead_agent_level_not_in_coop_sums(self, simple_grid):
+        """After filtering, coop-level sums must not include dead agents' levels."""
+        focal = Agent(id=0, position=np.array([0, 0]), level=1)
+        focal.path_finding_grid = simple_grid
+        alive = Agent(id=1, position=np.array([1, 1]), level=2)
+        dead = Agent(id=2, position=np.array([2, 2]), level=4)
+        dead.is_alive = False
+        focal.process_agent_infos([focal, alive, dead])
+        other_levels = [a["level"] for a in focal.known_agents]
+        sums = focal.get_possible_coop_level_sums(other_levels)
+        assert 5 not in sums  # 1 + 4 (dead) would be 5
+        assert 7 not in sums  # 1 + 2 + 4 would be 7
+
+    def test_dead_agent_predictions_invalidated_on_choose_fruit(self, simple_grid):
+        """predicted_targets/paths/rounds for a dead agent are purged by choose_fruit."""
+        focal = Agent(id=0, position=np.array([0, 0]), level=2)
+        focal.path_finding_grid = simple_grid
+        alive = Agent(id=1, position=np.array([1, 1]), level=1)
+        dead = Agent(id=2, position=np.array([2, 2]), level=1)
+        dead.is_alive = False
+        focal.process_agent_infos([focal, alive, dead])
+
+        stale_fruit = Fruit(position=np.array([3, 3]), level=1, free_slots=[np.array([3, 4])])
+        focal.known_fruits = [stale_fruit]
+        focal.predicted_targets = {2: stale_fruit}
+        focal.predicted_paths = {2: np.array([[2, 2], [3, 3]])}
+        focal.prediction_round = {2: 0}
+
+        focal.choose_fruit(force_reselect=True)
+
+        assert 2 not in focal.predicted_targets
+        assert 2 not in focal.predicted_paths
+        assert 2 not in focal.prediction_round

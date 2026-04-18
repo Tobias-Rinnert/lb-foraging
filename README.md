@@ -39,6 +39,15 @@ lbforaging/             Vendored upstream LBF environment (modified fork)
 start.bat               One-click launcher for the web app (Windows)
 ```
 
+## Agent Behavior Fixes
+
+- **Dead-agent filter** (`process_agent_infos`, `choose_fruit`): dead agents drop out of `known_agents` at the source, so coop-level sums, NN predictions, and expected-reward helper subsets only see live peers. Stale predictions keyed on dead agents are purged in `choose_fruit`.
+- **Unreachable-fruit filter** (`choose_fruit`): feasibility filter now also requires `fruit.free_slots` to be non-empty, eliminating the flip-flop where an agent re-picks a blocked fruit every step.
+- **Empty `known_fruits` guard** (`choose_fruit`): short-circuits to `self.target = None` before the `np.all(..., axis=1)` call that crashed with `AxisError` on a 1-D empty array.
+- **Walking-agents-are-not-obstacles** (`choose_next_action`): only loading agents block available slots; walking agents are allowed to occupy the route and move away by arrival time.
+- **`record_ground_truth` O(n²) → O(n) lookup**: precomputed `agent_positions_by_id` dict replaces a per-prediction linear scan; adjacency check vectorized via numpy broadcasting.
+- **Dead `ca_map` check in `food_growth` removed**: fruits can only spawn on grass, so the runtime stone-guard was unreachable; removed with a comment documenting the invariant.
+
 ## Changes to LBF
 
 The `lbforaging/` directory is a slightly modified fork of the original environment:

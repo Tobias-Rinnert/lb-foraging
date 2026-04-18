@@ -208,7 +208,7 @@ class Agent:
                                    "position_history": agent.position_history[-self.memory_size:],
                                    "last_action": agent.last_action,
                                    "is_loading": agent.is_loading
-                                   } for agent in agents if agent.id != self.id]
+                                   } for agent in agents if agent.id != self.id and agent.is_alive]
     
     
     """Agent chooses action logic"""
@@ -243,11 +243,17 @@ class Agent:
             self.target = None  # force re-selection next step
             return np.int64(0)
 
-        # Exclude slots already occupied by other agents so agents spread out
-        other_positions = {tuple(a["position"]) for a in (self.known_agents or [])}
-        available_slots = [s for s in self.target.free_slots if tuple(s) not in other_positions]
+        # Exclude slots held by LOADING agents only — they will not move out of the way.
+        # Walking agents are allowed; A* routes through them (path_finding_grid only
+        # marks loading agents as obstacles) and env collision handles the tick itself.
+        loading_positions = {
+            tuple(a["position"])
+            for a in (self.known_agents or [])
+            if a.get("is_loading")
+        }
+        available_slots = [s for s in self.target.free_slots if tuple(s) not in loading_positions]
         if not available_slots:
-            self.target = None  # all slots taken, try a different fruit next step
+            self.target = None  # every slot held by a loading agent, try another fruit next step
             return np.int64(0)
 
         # Try slots in order of euclidean distance; take the first one A* can reach.
@@ -352,6 +358,10 @@ class Agent:
         Returns:
             None (sets self.target side effect)
         """
+        if not self.known_fruits:
+            self.target = None
+            return
+
         fruit_positions = np.array([fruit.position for fruit in self.known_fruits])
         current_target_still_in_game = (
             self.target is not None
@@ -369,13 +379,21 @@ class Agent:
         max_achievable = int(max(coop_levels)) if len(coop_levels) > 0 else self.level
         feasible_fruits = [
             fruit for fruit in self.known_fruits
-            if fruit.level <= max_achievable
+            if fruit.level <= max_achievable and fruit.free_slots
         ]
 
         # Invalidate predictions for fruits that are no longer on the map
         for agent_id in list(self.predicted_targets.keys()):
             predicted_fruit = self.predicted_targets[agent_id]
             if not np.any(np.all(predicted_fruit.position == fruit_positions, axis=1)):
+                del self.predicted_targets[agent_id]
+                del self.predicted_paths[agent_id]
+                del self.prediction_round[agent_id]
+
+        # Drop predictions pinned to agents that are no longer alive
+        live_agent_ids = {a["id"] for a in self.known_agents}
+        for agent_id in list(self.predicted_targets.keys()):
+            if agent_id not in live_agent_ids:
                 del self.predicted_targets[agent_id]
                 del self.predicted_paths[agent_id]
                 del self.prediction_round[agent_id]

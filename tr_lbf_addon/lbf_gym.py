@@ -328,6 +328,9 @@ class LBF_GYM(Agent, Fruit):
 
         current_positions = [f.position for f in self.fruits]
 
+        # Precomputed once per call: O(agents) dict replaces the per-prediction linear scan.
+        agent_positions_by_id = {a.id: a.position for a in self.agents}
+
         for prev_fruit in previous_fruits:
             fruit_still_present = any(
                 np.array_equal(prev_fruit.position, curr_pos) for curr_pos in current_positions
@@ -337,12 +340,13 @@ class LBF_GYM(Agent, Fruit):
 
             self.any_fruit_loaded = True
 
-            adjacent_slots = [
+            # Vectorized adjacency: shape (4, 2) so we can broadcast-compare per prediction.
+            adjacent_slots_arr = np.array([
                 prev_fruit.position + np.array([0, 1]),
                 prev_fruit.position + np.array([0, -1]),
                 prev_fruit.position + np.array([1, 0]),
                 prev_fruit.position + np.array([-1, 0]),
-            ]
+            ])
 
             for agent in self.agents:
                 for prediction in agent.predictions:
@@ -350,13 +354,11 @@ class LBF_GYM(Agent, Fruit):
                         continue
                     if not np.array_equal(prediction["fruit_pos"], prev_fruit.position):
                         continue
-                    predicted_agent = next(
-                        (a for a in self.agents if a.id == prediction["agent_id"]), None
-                    )
-                    if predicted_agent is None:
+                    predicted_position = agent_positions_by_id.get(prediction["agent_id"])
+                    if predicted_position is None:
                         continue
-                    was_adjacent = any(
-                        np.array_equal(predicted_agent.position, slot) for slot in adjacent_slots
+                    was_adjacent = bool(
+                        np.any(np.all(adjacent_slots_arr == predicted_position, axis=1))
                     )
                     prediction["ground_truth"] = 1.0 if was_adjacent else 0.0
 

@@ -1,6 +1,7 @@
 # Plan — Fix Remaining Stuck-Agent & Robustness Edge Cases
 
-Covers issues 1–7 from the game-loop audit. Each section is self-contained:
+Covers issues 1–7 from the game-loop audit (Issue 5 is deferred to
+`plan-learned-reprediction-gate.md`). Each section is self-contained:
 **problem → root cause → fix → files → tests → risks**.
 
 Follow the project coding workflow throughout: descriptive naming, for-loops over
@@ -180,19 +181,11 @@ for agent_id in list(self.predicted_targets.keys()):
 ```
 
 ### Decision point — do dead bodies block movement?
-Two semantics:
 - **A (simpler):** dead agents do not block anything. Filter at `known_agents`,
   also skip them in `create_path_finding_grid` loading-agent check (they're
   `is_loading == False` so already skipped — no change needed).
-- **B (physical):** dead bodies remain as static obstacles in
-  `path_finding_grid` and `free_slots` (via `full_info_field[pos] = -level`).
-  Current behavior. Creates the "dead agent permanently blocks a fruit's only
-  slot" stuck case, but is resolved by Issue 2's fix (fruit with no free slots
-  becomes infeasible).
 
-**Recommended: B.** Keep bodies as obstacles — physically meaningful and Issue 2
-already handles the derived stuck case. Only change `known_agents` filtering +
-prediction cache cleanup.
+
 
 ### Files
 - `tr_lbf_addon/lbf_elements.py` — `Agent.process_agent_infos` (~1 line),
@@ -288,91 +281,27 @@ This matches the semantics already used in `create_path_finding_grid`.
 
 ## Issue 5 — Adjacent-and-LOADing-forever with absent helper
 
-### Problem
-Agent A is adjacent to a cooperative fruit, NN predicts agent B will help, B
-is actually targeting a different fruit. A issues LOAD every step. Stationary
-recovery fires but the EV math with the *same* NN predictions picks the same
-fruit → loop.
+**Status: MOVED OUT OF THIS PLAN.**
 
-### Root Cause
-No negative-feedback signal exists for a *failed* LOAD. `record_ground_truth`
-only fires when a fruit disappears. A's futile LOAD attempts produce no
-training signal, so the NN never learns "B was not coming for this fruit".
+The failed-LOAD hardcoded-threshold fix originally proposed here was rejected
+because it contradicts the "no hardcoded thresholds" direction the project is
+taking. The root cause — the NN has no negative-feedback signal for failed
+cooperation, and the re-prediction gate is a hand-coded heuristic — is now
+addressed architecturally in **`plan-learned-reprediction-gate.md`**, together
+with the README todo for time-series NN input that gives the main NN a way to
+represent "agent B has not moved for many steps" in the first place.
 
-### Fix (minimum viable — targeted, not architectural)
-Add a **failed-LOAD counter per (agent, fruit) pair** and force the agent to
-re-evaluate, **excluding the failing fruit**, after N consecutive unsuccessful
-LOAD attempts on the same fruit.
+Interim mitigation until that plan ships:
+- Issue 2 (filter unreachable fruits) eliminates most stuck-LOADing scenarios
+  by dropping fruits with empty `free_slots` from feasibility.
+- Issue 3 (filter dead agents out of `known_agents`) eliminates the dead-helper
+  variant.
+- Existing stationary recovery at `_STATIONARY_RESELECT_THRESHOLD = 3` acts as
+  a safety net, forcing reselection.
+- Evolutionary pressure selects against NNs that produce persistent false-helper
+  predictions — stuck agents do not eat, so they do not reproduce.
 
-#### Data
-New field on `Agent`:
-```python
-self._failed_load_attempts: dict[tuple[int, int], int] = {}
-"Maps (row, col) of target fruit → count of consecutive failed LOADs at that fruit"
-
-self._recently_abandoned: set[tuple[int, int]] = set()
-"Fruits this agent should skip selecting for the next N steps; cleared on fruit disappearance"
-```
-
-Constant:
-```python
-_FAILED_LOAD_THRESHOLD: int = 5
-"Consecutive failed LOAD attempts before abandoning a fruit temporarily"
-
-_ABANDON_COOLDOWN: int = 10
-"Steps a fruit stays on _recently_abandoned before the agent may retarget it"
-```
-
-#### Logic
-In `update_agents` (after setting `is_loading`):
-- If `agent.last_action == 5` (LOAD) and the target fruit still exists (no
-  disappearance → LOAD failed):
-  `self._failed_load_attempts[tuple(target.position)] += 1`
-- If the target fruit no longer exists (LOAD succeeded, or someone else loaded
-  it): clear its entry.
-
-In `choose_fruit`, extend feasibility filter:
-```python
-feasible_fruits = [
-    fruit for fruit in self.known_fruits
-    if fruit.level <= max_achievable
-    and fruit.free_slots
-    and tuple(fruit.position) not in self._recently_abandoned
-]
-```
-
-Abandon logic (run right before feasibility build): for each position in
-`_failed_load_attempts` ≥ `_FAILED_LOAD_THRESHOLD`, move it to
-`_recently_abandoned` with a countdown. Decrement cooldowns each call; drop
-expired entries.
-
-### Files
-- `tr_lbf_addon/lbf_elements.py` — new fields in `__init__`, `choose_fruit`
-  (~15 lines), possibly a small `_update_failed_load_tracking` helper
-- `tr_lbf_addon/lbf_gym.py` — `update_agents` calls the tracking helper
-  (~3 lines)
-
-### Tests (add in `test_lbf_elements.py`, new class `TestFailedLoadTracking`)
-1. `test_failed_load_increments_counter`
-2. `test_successful_load_clears_counter`
-3. `test_threshold_moves_fruit_to_abandoned`
-4. `test_abandoned_fruit_excluded_from_feasible`
-5. `test_cooldown_expiry_restores_eligibility`
-
-### Risks
-- **Threshold tuning** — 5 is a guess. Should be ≥ cooperative coordination
-  lag (time for a second agent to arrive). If too low, agents abandon
-  legitimately-loading fruits. Make it a class constant for easy tuning.
-- **Solo-loadable fruits** — a level-1 fruit cannot fail to load if the agent
-  issues LOAD while adjacent. So a level-1 fruit should never hit the
-  threshold. (Sanity: if it does, something else is broken.)
-- **Fruit disappears via ANOTHER agent loading it** — handled correctly by
-  "clear entry when target no longer exists".
-
-### Alternative (flagged, NOT recommended for this PR)
-Emit a "failed LOAD" pseudo-ground-truth (label 0.0) for the predicted helper
-when LOAD fails. Trains the NN on absence of cooperation. More general but
-much bigger change and harder to reason about.
+Nothing further to implement under Issue 5 in this plan.
 
 ---
 
@@ -491,8 +420,8 @@ pass.
    "dead body blocks only slot" stuck case.
 3. **Issue 1** (empty known_fruits guard) — trivial safety net.
 4. **Issue 4** (walking-agents don't clear target) — efficiency + less churn.
-5. **Issue 5** (failed-LOAD tracking) — ships the new mechanism, needs
-   careful threshold tuning.
+5. **Issue 5** — deferred; see `plan-learned-reprediction-gate.md`. Nothing to
+   implement in this plan.
 6. **Issue 6** (record_ground_truth refactor) — performance polish.
 7. **Issue 7** (remove unreachable ca_map check) — tidy-up.
 
@@ -511,18 +440,17 @@ For each issue, in order:
 ### Test-count projection
 - Current: 186 passing in addon tests
 - After all issues: ~186 + 3 (Issue 1) + 3 (Issue 2) + 4 (Issue 3) + 3
-  (Issue 4) + 5 (Issue 5) + 1 (Issue 6) + 0 (Issue 7) = **~205 passing**
+  (Issue 4) + 0 (Issue 5 deferred) + 1 (Issue 6) + 0 (Issue 7) = **~200 passing**
 
 ### Documentation updates
 - **README.md** — add a bullet per fix under "Agent Behavior Fixes"
-- **memory/project_state.md** — bump test counts, document new fields:
-  `_failed_load_attempts`, `_recently_abandoned`, and tuning constants
-  `_FAILED_LOAD_THRESHOLD`, `_ABANDON_COOLDOWN`
+- **memory/project_state.md** — bump test counts with a short description of
+  each fix shipped
 
 ### What we are deliberately NOT doing
 - Not merging `ca_map` into `full_info_field` (user decision: keep as-is)
-- Not redesigning the NN's feedback signal for failed cooperation (Issue 5
-  alternative path — too invasive for this PR)
+- Not implementing a failed-LOAD hardcoded-threshold fix for Issue 5 (rejected;
+  the learned-re-prediction-gate plan addresses the root cause architecturally)
 - Not touching `lbforaging/` upstream — all fixes live in `tr_lbf_addon/`
 
 ---
@@ -531,10 +459,10 @@ For each issue, in order:
 
 | File | Issues | Approx lines touched |
 |------|--------|----------------------|
-| `tr_lbf_addon/lbf_elements.py` | 1, 2, 3, 4, 5 | ~40 |
-| `tr_lbf_addon/lbf_gym.py` | 3 (optional), 5, 6 | ~15 |
+| `tr_lbf_addon/lbf_elements.py` | 1, 2, 3, 4 | ~25 |
+| `tr_lbf_addon/lbf_gym.py` | 6 | ~10 |
 | `tr_lbf_addon/game_runner.py` | 7 | ~2 |
-| `tr_lbf_addon/tests/test_lbf_elements.py` | 1, 2, 3, 4, 5 | ~200 (new tests) |
+| `tr_lbf_addon/tests/test_lbf_elements.py` | 1, 2, 3, 4 | ~150 (new tests) |
 | `tr_lbf_addon/tests/test_lbf_gym.py` | 6 | ~30 (optional new test) |
-| `README.md` | docs | ~7 lines |
-| `memory/project_state.md` | docs | ~10 lines |
+| `README.md` | docs | ~6 lines |
+| `memory/project_state.md` | docs | ~8 lines |

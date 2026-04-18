@@ -386,8 +386,8 @@ This project is source-available with an **academic publication restriction**. Y
 The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` for the original license.
 
 ## TODOs
-- evo leADS TO only one agent in game whoch cant load all fruits due to low lebel
-- stone and grass cells rarely appear and dont look good. needs more verification and better visuals
 - front end Viz of neural net architecture and editor for more intuitive and easier edits and for viz
 - final decision on which friot to choose should also just use teh agent predictor just for oneself. However there we can jump over teh inpu tlayer and use the prob of which agent chooses which fruit as an embedding somehow. something like this. 
 - in the end we want an architecture that can predict any action. SO then we use teh predictor to predict the probability for an action
+- feed a time series of world states (last N timesteps instead of just t) into the NN so it can learn temporal signals like "agent B has been standing still for many steps, probably not coming to help" — current single-timestep input has no way to represent this and is the root cause behind the "adjacent-and-LOADing-forever with absent helper" stuck case (Issue 5 in `plan-stuck-edge-cases.md`)
+- replace the hardcoded re-prediction gating logic (`is_agent_on_predicted_path` + early-return in `choose_fruit` + `_stationary_steps` threshold) with a learned model that decides when to re-predict — see "Notes on learned re-prediction gating" below

@@ -386,8 +386,13 @@ This project is source-available with an **academic publication restriction**. Y
 The LBF environment is by Filippos Christianos et al. See `lbforaging/LICENSE` for the original license.
 
 ## TODOs
-- front end Viz of neural net architecture and editor for more intuitive and easier edits and for viz
-- final decision on which friot to choose should also just use teh agent predictor just for oneself. However there we can jump over teh inpu tlayer and use the prob of which agent chooses which fruit as an embedding somehow. something like this. 
-- in the end we want an architecture that can predict any action. SO then we use teh predictor to predict the probability for an action
-- feed a time series of world states (last N timesteps instead of just t) into the NN so it can learn temporal signals like "agent B has been standing still for many steps, probably not coming to help" — current single-timestep input has no way to represent this and is the root cause behind the "adjacent-and-LOADing-forever with absent helper" stuck case (Issue 5 in `plan-stuck-edge-cases.md`)
-- replace the hardcoded re-prediction gating logic (`is_agent_on_predicted_path` + early-return in `choose_fruit` + `_stationary_steps` threshold) with a learned model that decides when to re-predict — see "Notes on learned re-prediction gating" below
+
+Detailed implementation plans live in [`plans/`](plans/):
+
+- **Stuck-agent & robustness edge cases** — [`plans/make-plan-stuck-edge-cases-to-a-cheeky-koala.md`](plans/make-plan-stuck-edge-cases-to-a-cheeky-koala.md). Mechanical fix list for six issues in agent cognition (dead-agent filter, unreachable-fruit filter, empty `known_fruits` guard, walking-agents-are-not-obstacles, `record_ground_truth` performance, dead `ca_map` check).
+- **Interactive NN architecture viewer** — [`plans/plan-nn-architecture-viz.md`](plans/plan-nn-architecture-viz.md). Zoomable, data-driven visualization of each agent's `AgentPredictor` in the web UI. Opens → auto-pauses the game → shows architecture graph, weight heatmaps, and frozen forward-pass activations. Learning metrics stay in `MetricsPanel`.
+- **Learned re-prediction gate + time-series NN input** — [`plans/plan-learned-reprediction-gate.md`](plans/plan-learned-reprediction-gate.md). Replaces the hardcoded `is_agent_on_predicted_path` + `_stationary_steps` heuristic with a learned gate, and feeds a time-series of world states so the NN can represent signals like "agent B has been standing still for many steps". Addresses the deferred "adjacent-and-LOADing-forever with absent helper" edge case.
+
+Open ideas without plans yet:
+- Use the `AgentPredictor` for the focal agent's own target decision too — reuse the other-agents prediction probabilities as a learned embedding, skipping the input-layer encoding. Unifies self-decision and other-prediction under one model.
+- Long-term: a single architecture that predicts any action. The predictor outputs a distribution over actions; re-plan / load / move all share one inference pass.

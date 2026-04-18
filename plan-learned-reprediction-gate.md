@@ -1,5 +1,7 @@
 # Plan — Learned Re-Prediction Gate
 
+- note: before implementing this we need a viz for teh nn architecture i the front end so i can better see teh architecture and coorrect mistakes. 
+
 Replace the hardcoded re-prediction gating (`is_agent_on_predicted_path` + the
 early-return in `choose_fruit` + `_STATIONARY_RESELECT_THRESHOLD`) with a
 learned, self-calibrating gate that decides when each agent should re-run its

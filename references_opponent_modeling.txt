@@ -1,0 +1,56 @@
+Related Work: Multi-Agent RL with Action/Policy Prediction of Other Agents
+==========================================================================
+
+MOST DIRECTLY RELEVANT (predict others' actions -> choose own action)
+---------------------------------------------------------------------
+- He, Boyd-Graber, Kwok, Daume III (2016).
+  "Opponent Modeling in Deep Reinforcement Learning" (DRON).
+  ICML. https://arxiv.org/abs/1609.05559
+
+- Hong, Su, Shann, Chang, Lee (2018).
+  "A Deep Policy Inference Q-Network for Multi-Agent Systems" (DPIQN / DRPIQN).
+  AAMAS. https://arxiv.org/abs/1712.07893
+
+- Raileanu, Denton, Szlam, Fergus (2018).
+  "Modeling Others using Oneself in Multi-Agent Reinforcement Learning" (SOM).
+  ICML. https://arxiv.org/abs/1802.09640
+
+THEORY OF MIND / RECURSIVE REASONING
+------------------------------------
+- Rabinowitz, Perbet, Song, Zhang, Eslami, Botvinick (2018).
+  "Machine Theory of Mind" (ToMnet).
+  ICML. https://arxiv.org/abs/1802.07740
+
+- Wen, Yang, Luo, Wang (2019).
+  "Probabilistic Recursive Reasoning for Multi-Agent Reinforcement Learning" (PR2).
+  ICLR. https://arxiv.org/abs/1901.09207
+
+CENTRALIZED-TRAINING VARIANTS (related but different)
+-----------------------------------------------------
+- Lowe, Wu, Tamar, Harb, Abbeel, Mordatch (2017).
+  "Multi-Agent Actor-Critic for Mixed Cooperative-Competitive Environments" (MADDPG).
+  NeurIPS. https://arxiv.org/abs/1706.02275
+
+- Foerster, Chen, Al-Shedivat, Whiteson, Abbeel, Mordatch (2018).
+  "Learning with Opponent-Learning Awareness" (LOLA).
+  AAMAS. https://arxiv.org/abs/1709.04326
+
+SURVEYS
+-------
+- Albrecht, Stone (2018).
+  "Autonomous agents modelling other agents: A comprehensive survey and open problems."
+  Artificial Intelligence Journal. https://arxiv.org/abs/1709.08071
+
+- Papoudakis, Christianos, Albrecht (2021).
+  "Agent Modelling under Partial Observability for Deep Reinforcement Learning."
+  NeurIPS. https://arxiv.org/abs/2006.09447
+
+LB-FORAGING SPECIFIC (same benchmark environment)
+-------------------------------------------------
+- Christianos, Schafer, Albrecht (2020).
+  "Shared Experience Actor-Critic for Multi-Agent Reinforcement Learning" (SEAC).
+  NeurIPS. https://arxiv.org/abs/2006.07169
+
+- Papoudakis, Christianos, Schafer, Albrecht (2021).
+  "Benchmarking Multi-Agent Deep Reinforcement Learning Algorithms in Cooperative Tasks."
+  NeurIPS Datasets & Benchmarks. https://arxiv.org/abs/2006.07869
